@@ -57,6 +57,23 @@ When a code review or inspection surfaces a finding that is **directly related t
 
 The test: if the debt lives in a file the current PR already touches, and the fix is ≤ ~20 lines, do it now. Only defer when the fix would require a separate design decision, a new migration, or pulls in files entirely outside the current change's scope.
 
+### No Silent Exit Paths
+
+Every exit path from a handler, background job, or event callback must produce a log line. A `return` with no preceding log in a non-nominal path is always a bug.
+
+This applies especially to:
+- **Null checks**: subscription not found, event ID missing, record lookup returned None
+- **Early returns from state guards**: duplicate event, stale event, terminal-status block
+- **Worker error paths**: per-cycle failures caught and swallowed without capture
+
+A silent 200 OK from a webhook that took no action is diagnosed by the absence of logs — which is no basis for diagnosis. Webhook handlers that returned 200 without acting have left state changes unprocessed with nothing in the logs to show it.
+
+### Design Docs Must Specify the Data Model
+
+For any feature involving a repeated pattern (N insight types, N notification templates, N scoring rules), the design doc must include the **concrete struct/dataclass/schema** that all instances conform to — not just prose describing intent. If the design doc lacks this, the ticket is incomplete. Stop and ask before implementing.
+
+This is the upstream gate for the Declarative Before Imperative law. The abstraction must exist on paper before any instance is written in code.
+
 ---
 
 ## Worktrees — Mandatory for All Code Changes
@@ -111,6 +128,15 @@ main checkout (main — read-only for agents)
 - Move to **In Progress** when starting. Run `/code-review medium` and post findings before moving to **Blocked/In Review**.
 - Never move to **Done** — reserved for user approval.
 - Commit format: `<type>(<scope>): <description> [PLANE-###]`
+
+---
+
+## Testing
+
+- **Test real behavior at real system boundaries.** Don't mock the database — mocked tests have passed while real migrations failed in production. Integration tests must hit a real DB.
+- **New behavior gets a test in the same commit.** Not "we'll add tests later." If you add a code path, cover it.
+- **Run the full test suite sparingly** — pre-finalization only, never in parallel. Prefer targeted test runs (single file or test) during active development. The full suite is the gate before a PR is opened, not a development loop.
+- **Type checking and test suites verify code correctness, not feature correctness.** Passing tests do not mean the feature works end-to-end. Test the golden path and edge cases manually for any UI or behavioral change.
 
 ---
 
