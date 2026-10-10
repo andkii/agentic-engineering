@@ -1,4 +1,4 @@
-# Agentic Engineering Conventions
+# eng-laws
 
 Source of truth for engineering laws that apply across all projects using AI-assisted development.
 
