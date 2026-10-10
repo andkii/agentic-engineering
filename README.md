@@ -6,7 +6,25 @@ Source of truth for engineering laws that apply across all projects using AI-ass
 
 These conventions govern how work is created, executed, reviewed, and recorded in any project where Claude Code (or equivalent agentic tools) are part of the development workflow. They are not tied to any specific stack, language, or codebase.
 
-Each project's `CLAUDE.md` should incorporate the laws from `ENGINEERING_LAWS.md` alongside project-specific overrides (verification commands, architecture notes, resource lifecycle rules, etc.).
+Each project's `CLAUDE.md` incorporates the laws from `ENGINEERING_LAWS.md` via Claude Code's native `@import` syntax, alongside project-specific overrides (verification commands, architecture notes, resource lifecycle rules, etc.).
+
+## How to use in a project
+
+Claude Code supports `@path/to/file.md` imports in `CLAUDE.md`. Add this repo as a git submodule at `.eng-laws/` and reference it at the top of the project's `CLAUDE.md`:
+
+```markdown
+@.eng-laws/ENGINEERING_LAWS.md
+
+# Project-specific overrides below
+```
+
+Or, if both repos live under the same parent directory (e.g. `~/dev/`):
+
+```markdown
+@../eng-laws/ENGINEERING_LAWS.md
+```
+
+The laws are inlined at read time — no copying, no drift.
 
 ## What goes here vs in project CLAUDE.md
 
