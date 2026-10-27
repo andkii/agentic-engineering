@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Laws: add Regression Proof (failing test first, incident corpus, replay on change, checkable acceptance criteria, no retry-until-green). Law text only; no hook or agent behavior change, so no version bump.
+
 ## 0.1.0
 
 - Plugin scaffold: `.claude-plugin/plugin.json`, `marketplace.json`.

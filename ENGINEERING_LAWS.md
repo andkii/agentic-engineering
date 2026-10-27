@@ -149,6 +149,16 @@ main checkout (main — read-only for agents)
 - **Run the full test suite sparingly** — never in parallel, never as a development loop. Prefer targeted checks proportional to risk (single file or test, lint, build, smoke). Run the full local suite only on request or for broad/high-risk changes; pull-request CI owns the full matrix. Report the checks run and any relevant check that could not run.
 - **Type checking and test suites verify code correctness, not feature correctness.** Passing tests do not mean the feature works end-to-end. Test the golden path and edge cases manually for any UI or behavioral change.
 
+### Regression Proof
+
+A fix is not done until a test proves it, and the proof comes from real failures, not imagined ones.
+
+- **Failing test first.** A bug fix starts with a test built from the real failing input (captured from production, a log, or the report), sanitized of secrets and personal data. Run it and watch it fail for the reported reason, then fix, then watch it pass. Report both runs.
+- **Every incident adds a case.** The input that caused the failure becomes a permanent fixture in the repo. The fixture set is the project's regression corpus.
+- **Replay the corpus when the system under test changes**: a dependency upgrade, a refactor, a model or prompt change for anything LLM-driven. A rule that survives a replay with the guard removed is dead weight; delete it.
+- **Acceptance criteria are checkable.** Each criterion names a command, query, or observable whose result decides pass or fail. A criterion that cannot be checked mechanically is marked `UNVERIFIABLE` and names the manual check, as in Cold Review.
+- **No retry-until-green.** A test that passes on rerun is a failing test. Quarantining a flaky test requires a tracked ticket in the same PR; deleting it silently is not allowed.
+
 ---
 
 ## Operational Scripts
