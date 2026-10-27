@@ -31,7 +31,7 @@ def load(path):
             try:
                 entry = json.loads(line)
                 kind, ident = entry["type"], entry["id"]
-            except (ValueError, KeyError, TypeError):
+            except (ValueError, KeyError, TypeError, RecursionError):
                 continue
             if not isinstance(ident, str):
                 continue
@@ -42,7 +42,8 @@ def load(path):
                         entry[key] = "?"
                 blocks[ident] = entry
             elif kind == "mark":
-                verdicts[ident] = entry.get("verdict")
+                verdict = entry.get("verdict")
+                verdicts[ident] = verdict if verdict in VERDICTS else None
     return blocks, verdicts
 
 
@@ -121,7 +122,11 @@ def main(argv=None):
     if not path:
         print("report: CLAUDE_PLUGIN_DATA is not set; pass --file PATH", file=sys.stderr)
         return 2
-    blocks, verdicts = load(path)
+    try:
+        blocks, verdicts = load(path)
+    except OSError as error:
+        print(f"report: cannot read {path}: {error.strerror}", file=sys.stderr)
+        return 1
     if args.cmd == "list":
         listing(blocks, verdicts, args.unreviewed)
     elif args.cmd == "mark":

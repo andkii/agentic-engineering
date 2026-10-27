@@ -311,6 +311,24 @@ class BlockLogTest(unittest.TestCase):
         self.assertEqual(self.report("mark", "aaaaaaaa").returncode, 0)
         self.assertRegex(self.report("summary").stdout, r"git-revert\s+1\s+1\s+0\s+0")
 
+    def test_report_handles_unreadable_log_and_odd_verdicts(self):
+        path = os.path.join(self.data, "blocks.jsonl")
+        os.makedirs(path)  # a directory where the log should be
+        r = self.report("summary")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertNotIn("Traceback", r.stderr)
+        os.rmdir(path)
+        good = {"type": "block", "id": "aaaaaaaa", "ts": "2026-10-20T10:00:00Z", "rule": "git-revert"}
+        with open(path, "w") as f:
+            f.write(json.dumps(good) + "\n")
+            f.write(json.dumps({"type": "mark", "id": "aaaaaaaa", "verdict": [1]}) + "\n")
+            f.write("[" * 100000 + "\n")
+        for args in (["summary"], ["list"]):
+            with self.subTest(args=args):
+                r = self.report(*args)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertNotIn("Traceback", r.stderr)
+
     def test_mark_on_unwritable_log_reports_an_error(self):
         self.guard(self.feat, "git revert HEAD")
         (entry,) = read_log(self.data)
