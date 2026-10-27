@@ -36,5 +36,23 @@ The laws are inlined at read time — no copying, no drift.
 | Code quality laws (read-before-claim, declarative/imperative, debt-in-band) | Domain-specific key rules |
 | Review gate rules | Project structure |
 
+## Plugin
+
+This repo is also a Claude Code plugin and a single-plugin marketplace (`.claude-plugin/`). It enforces mechanically what the laws state in prose.
+
+| Component | Path | What it does |
+|---|---|---|
+| Bash guard hook | `hooks/guard-bash.sh` via `hooks/hooks.json` | Blocks `git revert`, `--no-verify`, force-push to main/master, and `git commit`/`git push` while on `main`/`master` |
+| Verifier agent | `agents/verifier.md` | Read-only (`Read, Grep, Glob`) evaluator that checks acceptance criteria against a diff with `file:line` evidence |
+
+A plugin-root `CLAUDE.md` is not loaded as context, so the laws still reach a project through the `@import` above; the plugin adds enforcement only.
+
+Install: `claude plugin marketplace add andkii/eng-laws#<tag>` then `claude plugin install eng-laws@eng-laws`.
+
+### Versioning
+
+`version` in `.claude-plugin/plugin.json` is the pin: installed repos stay on it until it changes. Every change that alters hook or agent behavior bumps `version` and gets a `CHANGELOG.md` entry. Add the marketplace at a tag (`#v0.1.0`) so adopters move only when they choose to.
+
 ## Repos using these conventions
 
+Adoption status is tracked in each adopting project, not here.

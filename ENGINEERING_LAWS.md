@@ -22,6 +22,7 @@ Before a session closes:
 - **Decisions or constraints** not obvious from the code → `docs/sessions/YYYY-MM-DD-slug.md`
 - **User complaints that drove a fix** → `docs/feedback/YYYY-MM-DD-slug.md` (one paragraph: what was reported, what was done, what was deferred)
 - Plane ticket state updated
+- Audit `git worktree list`. Remove only clean worktrees whose exact branch HEAD is verified merged; preserve dirty, unmerged, or changed worktrees, then run `git worktree prune`.
 
 Run `/session-close` to walk through this checklist interactively.
 
@@ -30,6 +31,16 @@ Run `/session-close` to walk through this checklist interactively.
 Before moving any ticket from In Progress → Blocked/In Review, run `/code-review medium` and post findings as a Plane comment. Hotfixes may skip only if time-critical — document that it was skipped and why.
 
 **`/code-review medium` is the permanent ceiling. Never use `high`, `max`, or `ultra` — they spawn multiple parallel cloud agents and consume more tokens than the work itself.**
+
+### Cold Review
+
+The adversarial review above must be cold. An author's context biases their judgment of their own work, so:
+
+- **Different context**: the reviewer is a separate agent or session. The author never reviews their own diff.
+- **Minimal input**: the reviewer receives only the diff and the acceptance criteria. Never the author's plan, reasoning, or session history.
+- **Read-only**: the reviewer reports; it does not edit or fix.
+- **Fixed output**: one line per acceptance criterion (`PASS`, `FAIL`, or `UNVERIFIABLE`) with `path:line` evidence, then one line per finding. `UNVERIFIABLE` names the command that would prove it.
+- **Disputes are settled by evidence**: if the author disagrees with a finding, they cite `path:line`, not argument.
 
 ### Provenance
 
@@ -135,8 +146,18 @@ main checkout (main — read-only for agents)
 
 - **Test real behavior at real system boundaries.** Don't mock the database — mocked tests have passed while real migrations failed in production. Integration tests must hit a real DB.
 - **New behavior gets a test in the same commit.** Not "we'll add tests later." If you add a code path, cover it.
-- **Run the full test suite sparingly** — pre-finalization only, never in parallel. Prefer targeted test runs (single file or test) during active development. The full suite is the gate before a PR is opened, not a development loop.
+- **Run the full test suite sparingly** — never in parallel, never as a development loop. Prefer targeted checks proportional to risk (single file or test, lint, build, smoke). Run the full local suite only on request or for broad/high-risk changes; pull-request CI owns the full matrix. Report the checks run and any relevant check that could not run.
 - **Type checking and test suites verify code correctness, not feature correctness.** Passing tests do not mean the feature works end-to-end. Test the golden path and edge cases manually for any UI or behavioral change.
+
+---
+
+## Operational Scripts
+
+One-shot scripts (backfills, migrations, data fixes) must let an operator tell at a glance that work is happening and how much is left:
+
+- **Periodic count output**: print a running tally every N rows (e.g. every 10,000). Silent scripts that only print on completion are unacceptable for anything that takes more than a few seconds.
+- **Final summary line**: always print total rows changed and total elapsed time on exit.
+- **Structured output**: `print(f"[{i}/{total}] ...")` or similar so progress is unambiguous.
 
 ---
 
