@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+Law text only; no hook or agent behavior change, so no version bump.
+
+- Add Regression Proof: failing test first, sanitized incident corpus, replay on change (with a threshold rule for nondeterministic systems), checkable acceptance criteria, no retry-until-green.
+- Add Strategic Execution; add to Provenance "read the official docs or source and cite what you read; ask when requirements are unclear".
+- Cold Review: state how it fits with `/code-review medium` (two reviews, one gate, one reviewer each, `/code-review` cold is best-effort); `UNVERIFIABLE` names a command or a manual check; a shell-less verifier returns `UNVERIFIABLE` for command-based criteria. The hotfix skip covers both reviews, and Plane Workflow now names both reviews.
+- Add Code Claims partial-read examples. Branches reach the default branch only through merged PRs; no direct push to it unless the user explicitly requests it; no force-push.
+- Say "default branch (`main` or `master`)"; mark tooling names and ticket states as substitutable; state that pattern sections (Resource Lifecycle) are the only overridable ones; define when a hotfix may skip review; Production Diligence notes that enforcement tooling may be stricter than the law.
+- Testing: soften an uncited production claim ("can pass", not "have passed"); Resource Lifecycle likewise ("can cause"). Remove an incident-flavored sentence from No Silent Exit Paths.
+- Minor wording: worktree and `--no-verify` clarifications.
+
 ## 0.1.1
 
 Fixes from three cold reviews of 0.1.0 and of the rewrites. The first bypassed the guard in many ways and found false positives; the second found control-structure, redirect, heredoc and directory-tracking gaps; the third (realistic payloads only) found that the common `git commit -m "$(cat <<'EOF' ... EOF)"` form was blocked when the message held an apostrophe, plus unquoted `$(...)` handling and per-directory branch tracking.
