@@ -46,6 +46,17 @@ The adversarial review above must be cold. An author's context biases their judg
 
 When claiming "this works because X" or "we decided Y", cite a doc. If no doc exists, write one before implementing.
 
+### Evidence Over Guessing
+
+Never speculate or guess. For any library, API, or tool, read the official docs or the source before acting. When requirements are unclear, ask instead of inventing scope.
+
+### Strategic Execution
+
+1. State the objective, constraints, and rationale before editing code.
+2. Work in bounded increments: implement, verify, reassess.
+3. Checkpoint after each major slice: status, gaps, risks.
+4. End with an outcome audit: what was delivered, what was deferred, and the next step.
+
 ---
 
 ## Code Quality Laws
@@ -56,7 +67,7 @@ Before stating anything about how code behaves — what a function does, what a 
 
 **The rule in one line: read the code, then state what it does. Never state then read.**
 
-This applies even when the answer seems obvious from a name or pattern. If the read contradicts the assumption, the read wins. Partial reads do not count — trace the full path before claiming to understand it.
+This applies even when the answer seems obvious from a name or pattern. If the read contradicts the assumption, the read wins. Partial reads (finding one writer of a field without checking all writers, finding one call site without checking the callee) do not count — trace the full path before claiming to understand it.
 
 ### Declarative Before Imperative
 
@@ -128,6 +139,8 @@ main checkout (main — read-only for agents)
   └── agent A → .claude/worktrees/fix-foo/  [fix/foo branch → PR]
   └── agent B → .claude/worktrees/feat-bar/ [feat/bar branch → PR]
 ```
+
+Both agents commit, push, and open PRs independently. The main branch is only updated via merged PRs.
 
 ---
 
