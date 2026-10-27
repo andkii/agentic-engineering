@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.2
+
+Block log: every guard block is recorded so true blocks and false positives can be counted per rule. No change to what is blocked.
+
+- `hooks/rules.py` (new): registry of rule ids (`git-revert`, `no-verify`, `hooks-path`, `push-protected`, `push-all`, `push-wildcard`, `push-unknown-branch`, `commit-protected`, `commit-unknown-branch`, `unparseable-git`, `unreadable-payload`). `guard.py` raises `Block(rule, detail)`; a test fails if a `Block` takes a bare string.
+- `hooks/blocklog.py` (new): appends one JSON line per block to `${CLAUDE_PLUGIN_DATA}/blocks.jsonl` (outside any repository). Stores rule id, git subcommand, UTC timestamp, cwd basename, and the command's first line with credentials redacted and capped at 200 characters; never the full raw command. Logging fails open: an unset variable, an unwritable path or any error skips the log and never changes the decision.
+- `hooks/report.py` (new): `summary` (blocks per rule and per day, with false-positive, true-block and open counts), `list [--unreviewed]`, and `mark ID [--verdict false-positive|true-block] [--note TEXT]`.
+- Tests: `tests/test_blocklog.py`; the existing corpus passes unchanged and no longer writes to a real data directory.
+
 ## Unreleased
 
 Law text only; no hook or agent behavior change, so no version bump.

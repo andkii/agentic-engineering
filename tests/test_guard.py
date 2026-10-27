@@ -323,7 +323,9 @@ class GuardTest(unittest.TestCase):
     def run_guard(self, cwd, command, raw=None):
         payload = raw if raw is not None else json.dumps(
             {"cwd": cwd, "tool_name": "Bash", "tool_input": {"command": command}})
-        return subprocess.run([GUARD], input=payload, capture_output=True, text=True)
+        # the corpus must not write blocks to a real plugin data directory
+        env = dict(os.environ, CLAUDE_PLUGIN_DATA=os.path.join(self.root, "plugin-data"))
+        return subprocess.run([GUARD], input=payload, capture_output=True, text=True, env=env)
 
     def expand(self, cmd):
         return cmd.replace("{MAIN}", self.repos["main"]).replace("{FEAT}", self.repos["feat"])

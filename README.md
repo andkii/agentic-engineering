@@ -44,6 +44,7 @@ This repo is also a Claude Code plugin and a single-plugin marketplace (`.claude
 |---|---|---|
 | Bash guard hook | `hooks/guard-bash.sh` (wrapper) and `hooks/guard.py`, registered in `hooks/hooks.json` | Blocks `git revert`; `--no-verify` (including `commit -n`, `am -n`, abbreviations, `-c core.hooksPath`, and `git config core.hooksPath`); any push whose destination is `main`/`master`; and `git commit` while the branch is `main`/`master` |
 | Verifier agent | `agents/verifier.md` | Read-only (`Read, Grep, Glob`) evaluator that checks acceptance criteria against the changed files with `file:line` evidence |
+| Block log and report | `hooks/blocklog.py`, `hooks/rules.py`, `hooks/report.py` | Records each block (rule id, git subcommand, time, redacted command) so false positives can be counted per rule; see "Block log" below |
 | Guard tests | `tests/test_guard.py` | Regression corpus of block and allow cases. Run `python3 -m unittest discover -s tests` |
 
 **Guard requirements and limits.**
@@ -59,6 +60,23 @@ This repo is also a Claude Code plugin and a single-plugin marketplace (`.claude
 A plugin-root `CLAUDE.md` is not loaded as context, so the laws still reach a project through the `@import` above; the plugin adds enforcement only.
 
 Install: `claude plugin marketplace add andkii/eng-laws#<tag>` then `claude plugin install eng-laws@eng-laws`.
+
+### Block log
+
+Every block appends one JSON line to `${CLAUDE_PLUGIN_DATA}/blocks.jsonl`. Claude Code exports `CLAUDE_PLUGIN_DATA` to hook processes (hooks reference, "Command hook fields"); it resolves to `~/.claude/plugins/data/<id>/` (for this plugin, `~/.claude/plugins/data/eng-laws-eng-laws/`), is kept across plugin updates, and is deleted when the plugin is uninstalled from its last location. It is outside every repository. If the variable is unset or the write fails, logging is skipped silently and the block still happens.
+
+Each entry holds: `id` (8 hex chars, used to mark it), `ts` (UTC), `rule` (an id from `hooks/rules.py`), `sub` (git subcommand, `null` when unknown), `cwd` (basename only), and `cmd`. `cmd` is the first line of the command only, with URL passwords, `Bearer`/`Basic` values, values of options and assignments whose name contains `pass`, `token`, `secret`, `key`, `auth` or `credential`, well-known token prefixes, and any 32+ character token-like string replaced by `<redacted>`, capped at 200 characters. This is best effort: a secret in an unusual shape can survive, so treat the file as sensitive (it is created mode 0600). Long hex strings such as commit SHAs are redacted too. There is no rotation; delete the file to reset it.
+
+Read it (the path defaults to the data directory when `CLAUDE_PLUGIN_DATA` is set; otherwise pass `--file`):
+
+```sh
+python3 hooks/report.py --file ~/.claude/plugins/data/eng-laws-eng-laws/blocks.jsonl summary
+python3 hooks/report.py --file ... list --unreviewed
+python3 hooks/report.py --file ... mark <id> --note "dry run, not a real revert"          # false positive (default)
+python3 hooks/report.py --file ... mark <id> --verdict true-block
+```
+
+`summary` prints blocks, false positives (`fp`), confirmed true blocks (`true`) and unreviewed (`open`) per rule and per day. Marks are appended to the same file and the last mark for an id wins.
 
 ### Versioning
 
