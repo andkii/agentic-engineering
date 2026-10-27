@@ -23,7 +23,7 @@ VERDICTS = ("false-positive", "true-block")
 def load(path):
     blocks, verdicts = OrderedDict(), {}
     try:
-        f = open(path, encoding="utf-8")
+        f = open(path, encoding="utf-8", errors="replace")
     except FileNotFoundError:
         return blocks, verdicts
     with f:
@@ -33,7 +33,13 @@ def load(path):
                 kind, ident = entry["type"], entry["id"]
             except (ValueError, KeyError, TypeError):
                 continue
+            if not isinstance(ident, str):
+                continue
             if kind == "block":
+                # coerce so a wrong-shaped entry cannot crash the report
+                for key in ("ts", "rule"):
+                    if not isinstance(entry.get(key), str):
+                        entry[key] = "?"
                 blocks[ident] = entry
             elif kind == "mark":
                 verdicts[ident] = entry.get("verdict")
@@ -86,8 +92,14 @@ def mark(path, blocks, ident, verdict, note):
              "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     if note:
         entry["note"] = note[:blocklog.CMD_LIMIT]
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry) + "\n")
+    try:
+        with open(path, "rb+") as f:
+            f.seek(0, os.SEEK_END)
+            needs_newline = f.tell() > 0 and (f.seek(-1, os.SEEK_END), f.read(1))[1] != b"\n"
+            f.write((b"\n" if needs_newline else b"") + json.dumps(entry).encode() + b"\n")
+    except OSError as error:
+        print(f"report: cannot write {path}: {error.strerror}", file=sys.stderr)
+        return 1
     print(f"marked {ident} ({blocks[ident].get('rule')}) as {verdict}")
     return 0
 

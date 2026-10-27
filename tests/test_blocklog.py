@@ -146,6 +146,72 @@ class BlockLogTest(unittest.TestCase):
         self.assertNotIn("second-line-body", first["cmd"])
         self.assertLessEqual(len(second["cmd"]), 200)
 
+    def test_only_the_blocked_git_invocation_is_logged(self):
+        """Secrets in other commands of the same line never reach the log (cold review, realism 4-5)."""
+        chained = [
+            'export PASSWORD="hunter2pass" && git revert HEAD',
+            "API_TOKEN=\"abc123tokenvalue\" ./run.sh; git revert HEAD",
+            "curl -H 'X-Api-Key: sekret_value_12345' -u admin:hunter2pass x && git revert HEAD",
+            "curl -d '{\"password\":\"hunter2pass\"}' https://x; git revert HEAD",
+            "docker login -u me -p s3cretpw registry.io && git revert HEAD",
+            "mysql -u root -pdbpass123 db; git revert HEAD",
+            "echo hunter2pass | gh secret set FOO && git revert HEAD",
+            "cd /w\ngit revert HEAD",
+            "\n\ngit revert HEAD",
+        ]
+        for command in chained:
+            with self.subTest(command=command):
+                r = self.guard(self.feat, command)
+                self.assertEqual(r.returncode, 2, r.stderr)
+                entry = read_log(self.data)[-1]
+                self.assertEqual(entry["cmd"], "git revert HEAD")
+
+    def test_secrets_inside_the_git_command_are_redacted(self):
+        cases = [
+            ("git push https://tok3n123456secret@github.com/o/r main", "tok3n123456secret"),
+            ("git push https://user:hunter2pass@github.com/o/r main", "hunter2pass"),
+            ("git -c http.extraHeader='Authorization: Bearer abcDEF1234567890' push origin main", "abcDEF1234567890"),
+            ("git -c credential.token=hunter2pass push origin main", "hunter2pass"),
+            ("git commit -n -m 'rotate password hunter2pass'", "hunter2pass"),
+            ("git revert HEAD ghp_abcdefghijklmnopqrstuvwxyz0123456789", "ghp_abcdef"),
+            ("git revert HEAD sk_live_abcdefghijklmnop1234", "sk_live_abcdef"),
+            ("git revert HEAD hvs.CAESIabcdefghijklmnop", "CAESIabcdef"),
+        ]
+        for command, secret in cases:
+            with self.subTest(command=command):
+                self.assertEqual(self.guard(self.feat, command).returncode, 2)
+                raw = read_text(os.path.join(self.data, "blocks.jsonl"))
+                self.assertNotIn(secret, raw)
+
+    def test_unparseable_logs_only_a_short_git_prefix(self):
+        self.guard(self.feat, "echo hunter2pass; git commit -m 'unterminated secret=hunter2pass")
+        (entry,) = read_log(self.data)
+        self.assertEqual(entry["rule"], "unparseable-git")
+        self.assertNotIn("hunter2pass", json.dumps(entry))
+        self.assertTrue(entry["cmd"].startswith("git commit"))
+
+    def test_slow_input_does_not_delay_the_guard(self):
+        import time
+        for command in ["git revert HEAD && echo " + "A" * 20000, "git revert " + "A" * 1000000]:
+            with self.subTest(size=len(command)):
+                start = time.monotonic()
+                r = self.guard(self.feat, command)
+                self.assertEqual(r.returncode, 2, r.stderr)
+                self.assertLess(time.monotonic() - start, 5)
+
+    def test_fifo_at_log_path_does_not_hang(self):
+        os.mkfifo(os.path.join(self.data, "blocks.jsonl"))
+        r = subprocess.run([GUARD], input=json.dumps({"cwd": self.feat, "tool_input": {"command": "git revert HEAD"}}),
+                           capture_output=True, text=True, timeout=5,
+                           env=dict(os.environ, CLAUDE_PLUGIN_DATA=self.data))
+        self.assertEqual(r.returncode, 2, r.stderr)
+
+    def test_home_of_slash_does_not_mangle_the_command(self):
+        env = dict(os.environ, CLAUDE_PLUGIN_DATA=self.data, HOME="/")
+        subprocess.run([GUARD], input=json.dumps({"cwd": self.feat, "tool_input": {"command": "git revert HEAD /a/b"}}),
+                       capture_output=True, text=True, env=env)
+        self.assertEqual(read_log(self.data)[-1]["cmd"], "git revert HEAD /a/b")
+
     # ----------------------------------------------------------------- fail open
 
     def test_log_failure_never_changes_the_decision(self):
@@ -227,6 +293,31 @@ class BlockLogTest(unittest.TestCase):
             f.write("not json\n")
         r = self.report("summary")
         self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+
+    def test_report_tolerates_wrong_shaped_and_non_utf8_entries(self):
+        good = {"type": "block", "id": "aaaaaaaa", "ts": "2026-10-20T10:00:00Z", "rule": "git-revert", "sub": "revert",
+                "cwd": "f", "cmd": "git revert HEAD"}
+        with open(os.path.join(self.data, "blocks.jsonl"), "wb") as f:
+            f.write(b"\xff\xfe\n")
+            f.write(json.dumps({"type": "block", "id": ["l"]}).encode() + b"\n")
+            f.write(json.dumps({"type": "block", "id": "a1", "ts": None, "rule": None}).encode() + b"\n")
+            f.write(json.dumps(good).encode())  # no trailing newline
+        for args in (["summary"], ["list"], ["list", "--unreviewed"]):
+            with self.subTest(args=args):
+                r = self.report(*args)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertNotIn("Traceback", r.stderr)
+        self.assertEqual(self.report("mark", "aaaaaaaa").returncode, 0)
+        self.assertRegex(self.report("summary").stdout, r"git-revert\s+1\s+1\s+0\s+0")
+
+    def test_mark_on_unwritable_log_reports_an_error(self):
+        self.guard(self.feat, "git revert HEAD")
+        (entry,) = read_log(self.data)
+        path = os.path.join(self.data, "blocks.jsonl")
+        os.chmod(path, 0o400)
+        r = self.report("mark", entry["id"])
+        self.assertNotEqual(r.returncode, 0)
         self.assertNotIn("Traceback", r.stderr)
 
     def test_report_uses_plugin_data_env_by_default(self):

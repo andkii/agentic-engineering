@@ -78,12 +78,14 @@ class Unparseable(Exception):
 
 
 class Block(Exception):
-    """A rule violation. `rule` is a rules.Rule; `sub` is the git subcommand, filled in by check_git."""
+    """A rule violation. `rule` is a rules.Rule; `sub` is the git subcommand and `argv` the git
+    invocation's words (the only part of the command the block log records)."""
 
     def __init__(self, rule, detail):
         super().__init__(detail)
         self.rule = rule
         self.sub = None
+        self.argv = None
 
 
 class State:
@@ -760,7 +762,11 @@ def run_command(words, state, depth):
     elif head == "popd":
         state.directory = state.dirstack.pop() if state.dirstack else None
     elif head == "git":
-        check_git(words[1:], state)
+        try:
+            check_git(words[1:], state)
+        except Block as block:
+            block.argv = ["git", *words[1:]]
+            raise
     elif head in SHELLS:
         for j, w in enumerate(words[1:], 1):
             if re.fullmatch(r"-[A-Za-z]*c", w):
@@ -796,6 +802,16 @@ def evaluate(text, state, depth=0):
             run_command(item, state, depth)
 
 
+def git_prefix(command):
+    """The first few words from the first `git` word on: all that can be logged of a command that
+    would not parse."""
+    words = command.split()
+    for i, word in enumerate(words):
+        if os.path.basename(word) == "git":
+            return words[i:i + 4]
+    return None
+
+
 def main():
     try:
         payload = json.load(sys.stdin)
@@ -813,13 +829,13 @@ def main():
         evaluate(command, State(cwd))
     except Block as reason:
         print(f"eng-laws guard: {reason}", file=sys.stderr)
-        blocklog.record(reason.rule, reason.sub, cwd, command)
+        blocklog.record(reason.rule, reason.sub, cwd, reason.argv)
         return 2
     except Unparseable as reason:
         if re.search(r"\bgit\b", command):
             print(f"eng-laws guard: cannot parse a git command ({reason}); failing closed. "
                   "Simplify the command.", file=sys.stderr)
-            blocklog.record(rules.UNPARSEABLE_GIT, None, cwd, command)
+            blocklog.record(rules.UNPARSEABLE_GIT, None, cwd, git_prefix(command))
             return 2
     return 0
 
