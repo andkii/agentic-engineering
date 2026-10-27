@@ -1,0 +1,8 @@
+{
+  "name": "eng-laws",
+  "version": "0.1.0",
+  "description": "Cross-repo agentic engineering process: enforced guards, verifier agent, ticket workflow skills.",
+  "author": {
+    "name": "andkii"
+  }
+}
