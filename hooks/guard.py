@@ -26,6 +26,9 @@ import re
 import subprocess
 import sys
 
+import blocklog
+import rules
+
 PROTECTED = {"main", "master"}
 SHELLS = {"bash", "sh", "zsh", "dash", "ksh", "ash", "fish"}
 # Shell keywords that precede a command: `if x; then CMD`, `{ CMD; }`, `! CMD`.
@@ -75,7 +78,14 @@ class Unparseable(Exception):
 
 
 class Block(Exception):
-    pass
+    """A rule violation. `rule` is a rules.Rule; `sub` is the git subcommand and `argv` the git
+    invocation's words (the only part of the command the block log records)."""
+
+    def __init__(self, rule, detail):
+        super().__init__(detail)
+        self.rule = rule
+        self.sub = None
+        self.argv = None
 
 
 class State:
@@ -472,12 +482,12 @@ def check_no_verify(sub, rest):
             skip = False
         elif tok.startswith("--"):
             if is_no_verify(tok):
-                raise Block("--no-verify is banned unless the user explicitly requests it.")
+                raise Block(rules.NO_VERIFY, "--no-verify is banned unless the user explicitly requests it.")
             skip = sub == "commit" and tok in COMMIT_VALUE_LONG
         elif sub in NEXT_TOKEN_LETTERS and re.fullmatch(r"-[A-Za-z0-9]+", tok):
             for idx, ch in enumerate(tok[1:], 1):
                 if ch == "n":
-                    raise Block(f"{sub} -n (--no-verify) is banned unless the user explicitly requests it.")
+                    raise Block(rules.NO_VERIFY, f"{sub} -n (--no-verify) is banned unless the user explicitly requests it.")
                 if ch in NEXT_TOKEN_LETTERS[sub]:
                     skip = idx == len(tok) - 1
                     break
@@ -505,7 +515,7 @@ def check_push(rest, state, directory, git_args):
             positional.append(tok)
         i += 1
     if "--mirror" in flags or "--all" in flags:
-        raise Block("git push --all/--mirror includes protected branches.")
+        raise Block(rules.PUSH_ALL, "git push --all/--mirror includes protected branches.")
     refspecs = positional if has_repo else positional[1:]
     destinations = []
     for ref in refspecs:
@@ -515,7 +525,7 @@ def check_push(rest, state, directory, git_args):
         if dst.startswith("refs/tags/"):
             continue
         if "*" in dst:
-            raise Block("wildcard push destinations can reach protected branches.")
+            raise Block(rules.PUSH_WILDCARD, "wildcard push destinations can reach protected branches.")
         for prefix in ("refs/heads/", "heads/"):
             if dst.startswith(prefix):
                 dst = dst[len(prefix):]
@@ -542,10 +552,10 @@ def check_push(rest, state, directory, git_args):
         destinations.append(effective_branch(state, directory, git_args))
     for dst in destinations:
         if dst is None:
-            raise Block("cannot determine the branch being pushed (unresolved directory or expansion). "
+            raise Block(rules.PUSH_UNKNOWN_BRANCH, "cannot determine the branch being pushed (unresolved directory or expansion). "
                         "Use a literal branch name and an absolute path.")
         if dst in PROTECTED:
-            raise Block(f"pushing to '{dst}' is banned. The default branch only changes through merged PRs.")
+            raise Block(rules.PUSH_PROTECTED, f"pushing to '{dst}' is banned. The default branch only changes through merged PRs.")
 
 
 def track_branch_switch(sub, rest, state, directory, git_args):
@@ -631,7 +641,7 @@ def check_git(args, state):
             i += 2
         elif a in ("-c", "--config-env") and i + 1 < len(args):
             if "core.hookspath" in args[i + 1].lower():
-                raise Block("changing core.hooksPath disables hooks; that is banned like --no-verify.")
+                raise Block(rules.HOOKS_PATH, "changing core.hooksPath disables hooks; that is banned like --no-verify.")
             i += 2
         elif a in GIT_PATH_OPTS and i + 1 < len(args):
             git_args += [a, args[i + 1]]
@@ -640,7 +650,7 @@ def check_git(args, state):
             i += 2
         elif (a.startswith("-c") and not a.startswith("--") and len(a) > 2) or a.startswith("--config-env="):
             if "core.hookspath" in a.lower():
-                raise Block("changing core.hooksPath disables hooks; that is banned like --no-verify.")
+                raise Block(rules.HOOKS_PATH, "changing core.hooksPath disables hooks; that is banned like --no-verify.")
             i += 1
         elif a.startswith("-"):
             if a.split("=", 1)[0] in GIT_PATH_OPTS:
@@ -651,20 +661,27 @@ def check_git(args, state):
     if i >= len(args):
         return
     sub, rest = args[i], args[i + 1:]
+    try:
+        check_subcommand(sub, rest, state, directory, git_args)
+    except Block as block:
+        block.sub = sub
+        raise
 
+
+def check_subcommand(sub, rest, state, directory, git_args):
     if sub == "revert":
-        raise Block("git revert is banned. Use git reset to undo commits.")
+        raise Block(rules.GIT_REVERT, "git revert is banned. Use git reset to undo commits.")
     if sub == "config" and "core.hookspath" in " ".join(rest).lower():
-        raise Block("changing core.hooksPath disables hooks; that is banned like --no-verify.")
+        raise Block(rules.HOOKS_PATH, "changing core.hooksPath disables hooks; that is banned like --no-verify.")
     if sub in NO_VERIFY_COMMANDS:
         check_no_verify(sub, rest)
     if sub == "commit" and not {"--dry-run", "-h", "--help"} & set(rest):
         branch = effective_branch(state, directory, git_args)
         if branch is None:
-            raise Block("cannot determine the branch for this commit (unresolved directory). "
+            raise Block(rules.COMMIT_UNKNOWN_BRANCH, "cannot determine the branch for this commit (unresolved directory). "
                         "Use an absolute path in cd/-C.")
         if branch in PROTECTED:
-            raise Block(f"on protected branch '{branch}'. Every code change goes in a worktree on its own branch: "
+            raise Block(rules.COMMIT_PROTECTED, f"on protected branch '{branch}'. Every code change goes in a worktree on its own branch: "
                         "git worktree add .claude/worktrees/<slug> -b <branch> origin/<default-branch>")
     elif sub == "push" and not {"-h", "--help"} & set(rest):
         check_push(rest, state, directory, git_args)
@@ -745,7 +762,11 @@ def run_command(words, state, depth):
     elif head == "popd":
         state.directory = state.dirstack.pop() if state.dirstack else None
     elif head == "git":
-        check_git(words[1:], state)
+        try:
+            check_git(words[1:], state)
+        except Block as block:
+            block.argv = ["git", *words[1:]]
+            raise
     elif head in SHELLS:
         for j, w in enumerate(words[1:], 1):
             if re.fullmatch(r"-[A-Za-z]*c", w):
@@ -781,6 +802,16 @@ def evaluate(text, state, depth=0):
             run_command(item, state, depth)
 
 
+def git_prefix(command):
+    """The first few words from the first `git` word on: all that can be logged of a command that
+    would not parse."""
+    words = command.split()
+    for i, word in enumerate(words):
+        if os.path.basename(word) == "git":
+            return words[i:i + 4]
+    return None
+
+
 def main():
     try:
         payload = json.load(sys.stdin)
@@ -788,6 +819,7 @@ def main():
         cwd = payload.get("cwd")
     except (ValueError, KeyError, AttributeError, TypeError):
         print("eng-laws guard: unreadable hook payload; failing closed.", file=sys.stderr)
+        blocklog.record(rules.UNREADABLE_PAYLOAD, None, None, None)
         return 2
     if not isinstance(command, str) or not command.strip():
         return 0
@@ -797,11 +829,13 @@ def main():
         evaluate(command, State(cwd))
     except Block as reason:
         print(f"eng-laws guard: {reason}", file=sys.stderr)
+        blocklog.record(reason.rule, reason.sub, cwd, reason.argv)
         return 2
     except Unparseable as reason:
         if re.search(r"\bgit\b", command):
             print(f"eng-laws guard: cannot parse a git command ({reason}); failing closed. "
                   "Simplify the command.", file=sys.stderr)
+            blocklog.record(rules.UNPARSEABLE_GIT, None, cwd, git_prefix(command))
             return 2
     return 0
 
