@@ -24,7 +24,7 @@ Or, if both repos live under the same parent directory (e.g. `~/dev/`):
 @../eng-laws/ENGINEERING_LAWS.md
 ```
 
-The laws are inlined at read time — no copying, no drift.
+The laws are read through the import, not copied. A submodule or a pinned checkout stays on one version until you deliberately bump it, so updating is a conscious step.
 
 ## What goes here vs in project CLAUDE.md
 
@@ -32,7 +32,7 @@ The laws are inlined at read time — no copying, no drift.
 |---|---|
 | Record Laws (session close, work tracking) | Verification command (`./scripts/check`, `pytest`, etc.) |
 | Worktree workflow | Resource lifecycle rules (Redis, DB, HTTP patterns) |
-| Plane ticket discipline | Architecture overview |
+| Ticket discipline (Plane in the examples; any tracker works) | Architecture overview |
 | Code quality laws (read-before-claim, declarative/imperative, debt-in-band) | Domain-specific key rules |
 | Review gate rules | Project structure |
 
@@ -42,8 +42,19 @@ This repo is also a Claude Code plugin and a single-plugin marketplace (`.claude
 
 | Component | Path | What it does |
 |---|---|---|
-| Bash guard hook | `hooks/guard-bash.sh` via `hooks/hooks.json` | Blocks `git revert`, `--no-verify`, force-push to main/master, and `git commit`/`git push` while on `main`/`master` |
-| Verifier agent | `agents/verifier.md` | Read-only (`Read, Grep, Glob`) evaluator that checks acceptance criteria against a diff with `file:line` evidence |
+| Bash guard hook | `hooks/guard-bash.sh` (wrapper) and `hooks/guard.py`, registered in `hooks/hooks.json` | Blocks `git revert`; `--no-verify` (including `commit -n`, `am -n`, abbreviations, `-c core.hooksPath`, and `git config core.hooksPath`); any push whose destination is `main`/`master`; and `git commit` while the branch is `main`/`master` |
+| Verifier agent | `agents/verifier.md` | Read-only (`Read, Grep, Glob`) evaluator that checks acceptance criteria against the changed files with `file:line` evidence |
+| Guard tests | `tests/test_guard.py` | Regression corpus of block and allow cases. Run `python3 -m unittest discover -s tests` |
+
+**Guard requirements and limits.**
+- Requires `python3` (standard library only). It fails closed: a missing `python3`, an unreadable payload, or an unparseable git command blocks the call with a message instead of silently allowing it.
+- It tokenizes the command and judges only what sits at command position, so quoted text, `echo` arguments, comments and heredoc bodies never trigger it. It looks inside `if`/`for`/`while`/`case` bodies, `{ }` groups, functions, `$(...)`, backticks, `bash -c`, `eval`, `find -exec`, and wrappers such as `sudo`, `env`, `timeout`, `xargs`.
+- It tracks the working directory through `cd`, `pushd`/`popd`, `( )` subshell scope, `git -C`, `env -C`, and a fixed set of expansions: `$PWD`, `$HOME`, `$(pwd)`, `$(git rev-parse --show-toplevel)`, quoted or not. A command substitution never splits the command it sits in.
+- It tracks a branch moved by a `git switch`/`checkout` earlier in the same command, for the directory where the switch ran (path checkouts, `--detach` and `checkout -` are handled), and a worktree created by `git worktree add` earlier in the same command. `git push origin "$(git branch --show-current)"` resolves to the current branch.
+- It follows simple shell variables assigned at the top level of the same command (`BRANCH=feat/x; git push origin "$BRANCH"`, also `export`/`declare`/`readonly`/`local`), a `${VAR:-main}` default, `cd -`, and a `mkdir x && cd x` target under an existing repository. Not followed: an assignment inside an `if`/`for`/`{ }`/function body, `+=`, `unset`, a literal loop list (`for b in main master`), a value holding `refs/heads/...` or `HEAD:...`, and `$(...)` values other than the current-branch queries. A checkout that creates a local branch from `origin/<name>` (DWIM or `--track`) counts as a switch.
+- When the directory or branch cannot be determined, `git commit` and a push without a refspec are blocked with a message asking for a literal branch name and an absolute path. Known friction: a bare command substitution as a push destination (`git push origin $(some-command)`), any other `$VAR` or `$(...)` in a `cd`/`-C` target, and `git init x && cd x && git commit` outside a repository (the new repository does not exist yet when the guard runs). Inside a repository, `git init x`/`git clone … x` followed by `cd x && git commit` is judged against the parent repository's branch, not the new one. A variable with no assignment in the same command (loop variable, value from the environment) is not judged: it is variable indirection, out of scope below.
+- It is a guard against mistakes, not a sandbox. Out of scope: other variable indirection (`g=git; $g revert`), aliases, scripts, `ssh`/`watch`/`parallel`/`env -S` wrappers, `GIT_*` environment overrides, and deliberate obfuscation. Edits made through tools other than Bash are not covered.
+- It blocks `--no-verify` unconditionally, which is stricter than the law's "unless the user explicitly requests it". If the user requests it, the user runs the command themselves (the `!` prefix) or disables the plugin for that session.
 
 A plugin-root `CLAUDE.md` is not loaded as context, so the laws still reach a project through the `@import` above; the plugin adds enforcement only.
 

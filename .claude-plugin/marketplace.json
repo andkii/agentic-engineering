@@ -1,14 +1,14 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "eng-laws",
-  "description": "Agentic engineering process plugin: enforced guards, verifier agent, ticket workflow skills.",
+  "description": "Agentic engineering process plugin: enforced git guards and a read-only verifier agent.",
   "owner": {
     "name": "andkii"
   },
   "plugins": [
     {
       "name": "eng-laws",
-      "description": "Enforced guards, verifier agent, and ticket workflow skills.",
+      "description": "Enforced git guards and a read-only verifier agent.",
       "source": "./",
       "category": "productivity"
     }
