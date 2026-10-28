@@ -81,6 +81,18 @@ When a code review or inspection surfaces a finding that is **directly related t
 
 The test: if the debt lives in a file the current PR already touches, and the fix is ≤ ~20 lines, do it now. Only defer when the fix would require a separate design decision, a new migration, or pulls in files entirely outside the current change's scope.
 
+### Smallest Sufficient Change
+
+Build what was asked, and leave no dead weight behind. The goal is explicit, readable code, not fewer lines. A shared abstraction that needs flags or special cases to tell its callers apart is the symptom of over-compression; keep the explicit copies instead.
+
+- **Do what was asked.** No unrequested features, refactors, files, flags, config options, or dependencies. Anything not in the request becomes its own ticket, except what Clear Debt In-Band allows: small related fixes and refactors in files already in the diff.
+- **No speculative generality.** An abstraction, parameter, option, hook, or extension point needs a caller in the same change. "We might need it" is not a caller. When an abstraction is justified, Declarative Before Imperative decides its shape.
+- **Reuse before writing.** Search for an existing implementation before adding one. A second copy of the same logic is tolerable and is named in the PR; before writing a third, define the abstraction (Declarative Before Imperative). Do not merge code that only looks alike.
+- **A replacement deletes what it replaces.** A change that adds a new version, variant, or path (a `_v2`, a second implementation, a new flow) removes the old one in the same change, or states in the PR why it stays and when it goes.
+- **Leave no dead code.** Remove what your change makes unused: imports, variables, helpers, parameters, flags, branches, scripts, config. Code with no caller is deleted, not commented out; version control remembers it. Before adding a symbol, know its caller; before finishing, search for a caller of each symbol you added (a grep, or the project's unused-code check).
+- **A new dependency needs a reason.** The PR states what it does that the standard library or an existing dependency does not.
+- **Report it.** The PR description gives net lines added and removed and lists anything added that was not asked for. A cold reviewer maps every changed hunk to a requirement, and a hunk that maps to none is a finding.
+
 ### No Silent Exit Paths
 
 Every exit path from a handler, background job, or event callback must produce a log line. A `return` with no preceding log in a non-nominal path is always a bug.
@@ -97,6 +109,21 @@ A silent 200 OK from a webhook that took no action is diagnosed by the absence o
 For any feature involving a repeated pattern (N insight types, N notification templates, N scoring rules), the design doc must include the **concrete struct/dataclass/schema** that all instances conform to — not just prose describing intent. If the design doc lacks this, the ticket is incomplete. Stop and ask before implementing.
 
 This is the upstream gate for the Declarative Before Imperative law. The abstraction must exist on paper before any instance is written in code.
+
+---
+
+## Delegation
+
+Work handed to another agent (another vendor's coding agent, a subagent, a background job) falls under the same laws as work done directly. The delegating agent stays responsible for it.
+
+- **Deliver the laws; do not hope for them.** The delegate must load these laws through its own instruction mechanism before it writes code, for example a global instruction file that points at the same pinned laws. Task text alone is not a delivery mechanism. If the delegate cannot load them, it does read-only work only.
+- **Same enforcement, or less access.** Guards that protect the default branch (hooks, git hooks) must apply to the delegate too. "Apply" means tested: attempt a blocked action through the delegate in a scratch repository and observe the block. Until that is shown, give the delegate read-only tasks (review, investigation), not write tasks.
+- **Isolate writes.** Write delegation runs in a worktree on its own branch, started from a session whose working directory is that worktree, because delegates work in the git root of the delegating session's directory. A session in the default-branch checkout cannot delegate writes.
+- **Brief it checkably.** The delegate gets the objective, constraints, checkable acceptance criteria, and the absolute worktree path.
+- **Delegated reviewers.** A delegate acting as a cold reviewer gets only the diff and the criteria where its tool allows (see Cold Review). A reviewer that reads the repository itself is cold on a best-effort basis, as with `/code-review`. The cost ceiling applies to delegated reviews: one reviewer per review, no fan-out.
+- **Delegated output is untrusted until verified.** It passes the same cold review and the project's CI as direct work. Do not report it as done before that.
+- **No unattended loops.** No automatic review loops between agents (for example a stop-time gate that re-invokes another agent) unless a human is watching.
+- **Record it.** The project's parameters name the model and effort used per class of task. The PR states which parts were delegated, to which agent and model, and that the output was verified.
 
 ---
 

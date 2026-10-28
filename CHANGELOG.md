@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+
+- Guard: expand variables assigned earlier in the same command when resolving `cd`, `git -C`, `env -C` and `git worktree add` targets. `D=/path; cd "$D" && git commit` was blocked as an unresolved directory even when `$D` was a feature checkout; a variable pointing at a protected checkout is now blocked as such. A variable with no assignment in the command still fails closed. `$PWD`, `$(pwd)` and the toplevel inside an assigned value are expanded at assignment time (previously they would have been resolved against whatever directory was current at use). `unset`, a `for` loop variable, `select` and `read` forget an earlier assignment. A value over 4,096 characters is dropped, which also stops a self-doubling `A=$A$A` chain from hanging or exhausting memory in the hook.
+- Laws: add Smallest Sufficient Change (no unrequested additions, no speculative generality, reuse before writing, a replacement deletes what it replaces, no dead code, justified dependencies, net lines reported) and Delegation (the same laws bind delegated work; laws delivered through the delegate's own instruction file; same enforcement or read-only; isolated writes; output untrusted until cold review and CI).
+- README: machine setup for delegating to Codex (pinned official plugin, global `AGENTS.md` linked to the pinned laws, instruction-size cap) and what is and is not verified.
+
 ## 0.1.2
 
 Block log: every guard block is recorded so true blocks and false positives can be counted per rule. No change to what is blocked.
