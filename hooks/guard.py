@@ -67,6 +67,7 @@ VARIABLE = re.compile(r"\$\{(\w+)\}|\$(\w+)")
 EXPANSION = re.compile(r"\$\([^()]*\)|`[^`]*`|\$\{\w+\}|\$\w+")
 DECLARATIONS = {"export", "declare", "readonly", "local", "typeset"}
 MAX_DEPTH = 5
+MAX_VALUE_LENGTH = 4096
 
 SHELL_BEFORE_HEREDOC = re.compile(
     r"(?:^|[;&|(`]|\$\()\s*(?:[\w./-]*/)?(?:bash|sh|zsh|dash|ksh|ash)\b[^;&|]*$")
@@ -384,20 +385,33 @@ def same_repo(a, b):
     return top is not None and top == toplevel(b)
 
 
-def resolve_dir(target, base):
-    """Resolve a cd/-C target against base. None = unknown (unresolved expansion)."""
+PWD_TOKENS = ("${PWD}", "$PWD", "$(pwd)", "`pwd`")
+TOPLEVEL_TOKENS = ("$(git rev-parse --show-toplevel)", "`git rev-parse --show-toplevel`")
+
+
+def expand_dir_tokens(text, base):
+    """Replace $PWD, $(pwd) and the repository toplevel with the directory `base`, and $HOME with the
+    home directory. With an unknown `base` they become an unresolvable marker, never a guess."""
+    for token in PWD_TOKENS:
+        text = text.replace(token, base if base is not None else "$__UNKNOWN_DIR__")
+    for token in ("${HOME}", "$HOME"):
+        text = text.replace(token, os.path.expanduser("~"))
+    for token in TOPLEVEL_TOKENS:
+        if token in text:
+            top = toplevel(base) if base is not None else None
+            if top is not None:
+                text = text.replace(token, top)
+            elif base is None:
+                text = text.replace(token, "$__UNKNOWN_DIR__")
+    return text
+
+
+def resolve_dir(target, base, variables=None):
+    """Resolve a cd/-C target against base, expanding variables assigned earlier in the same
+    command. None = unknown (an expansion that cannot be resolved)."""
     if base is None:
         return None
-    t = target
-    for token in ("${PWD}", "$PWD", "$(pwd)", "`pwd`"):
-        t = t.replace(token, base)
-    for token in ("${HOME}", "$HOME"):
-        t = t.replace(token, os.path.expanduser("~"))
-    for token in ("$(git rev-parse --show-toplevel)", "`git rev-parse --show-toplevel`"):
-        if token in t:
-            top = toplevel(base)
-            if top is not None:
-                t = t.replace(token, top)
+    t = expand_dir_tokens(expand_vars(target, variables or {}), base)
     if "$" in t or "`" in t:
         return None
     return os.path.normpath(os.path.join(base, os.path.expanduser(t)))
@@ -617,7 +631,7 @@ def track_worktree(rest, state, directory, git_args):
         j += 1
     if not positional:
         return
-    path = resolve_dir(positional[0], directory)
+    path = resolve_dir(positional[0], directory, state.vars)
     if path is None:
         return
     if new:
@@ -637,7 +651,7 @@ def check_git(args, state):
     while i < len(args):
         a = args[i]
         if a == "-C" and i + 1 < len(args):
-            directory = resolve_dir(args[i + 1], directory)
+            directory = resolve_dir(args[i + 1], directory, state.vars)
             i += 2
         elif a in ("-c", "--config-env") and i + 1 < len(args):
             if "core.hookspath" in args[i + 1].lower():
@@ -693,7 +707,7 @@ def check_subcommand(sub, rest, state, directory, git_args):
 
 # --------------------------------------------------------------- evaluation
 
-def strip_prefix(words, directory):
+def strip_prefix(words, directory, variables=None):
     """Drop VAR=value, shell keywords, and wrapper commands. Returns (words, directory)."""
     i = 0
     while i < len(words):
@@ -713,7 +727,7 @@ def strip_prefix(words, directory):
                 opt = words[i]
                 takes_value = opt in value_opts and "=" not in opt
                 if takes_value and i + 1 < len(words) and name == "env" and opt in ("-C", "--chdir"):
-                    directory = resolve_dir(words[i + 1], directory)
+                    directory = resolve_dir(words[i + 1], directory, variables)
                 i += 2 if takes_value else 1
             if name == "timeout":
                 i += 1
@@ -723,11 +737,19 @@ def strip_prefix(words, directory):
 
 
 def record_assignments(words, state):
-    """Remember NAME=value so a later `git push origin "$NAME"` can be judged."""
+    """Remember NAME=value so a later `git push origin "$NAME"` or `cd "$NAME"` can be judged.
+    $PWD, $(pwd) and the toplevel are expanded NOW: they mean the directory at assignment time,
+    not whichever directory is current when the variable is used. An oversized value (a
+    self-doubling `A=$A$A` chain) is dropped, so the variable counts as unassigned and fails closed."""
     for w in words:
         m = ASSIGNMENT.match(w)
-        if m:
-            state.vars[m.group(1)] = expand_vars(m.group(2), state.vars)
+        if not m:
+            continue
+        value = expand_dir_tokens(expand_vars(m.group(2), state.vars), state.directory)
+        if len(value) > MAX_VALUE_LENGTH:
+            state.vars.pop(m.group(1), None)
+        else:
+            state.vars[m.group(1)] = value
 
 
 def run_command(words, state, depth):
@@ -736,13 +758,22 @@ def run_command(words, state, depth):
         if not ASSIGNMENT.match(w):
             break
         leading.append(w)
-    words, state.directory = strip_prefix(words, state.directory)
+    words, state.directory = strip_prefix(words, state.directory, state.vars)
     if not words:
         record_assignments(leading, state)  # a bare `NAME=value` statement sets a shell variable
         return
     head = os.path.basename(words[0])
     if head in DECLARATIONS:
         record_assignments(words[1:], state)
+    elif head == "unset":
+        for name in words[1:]:
+            state.vars.pop(name, None)  # a stale value must not outlive unset
+    elif head in ("for", "select") and len(words) > 2:
+        state.vars.pop(words[1], None)  # the loop variable shadows any earlier assignment
+    elif head == "read":
+        for name in words[1:]:
+            if not name.startswith("-"):
+                state.vars.pop(name, None)  # read overwrites them; forgetting too much only fails closed
     elif head in ("cd", "pushd"):
         args, k = words[1:], 0
         while k < len(args) and args[k].startswith("-") and args[k] != "-":
@@ -757,7 +788,7 @@ def run_command(words, state, depth):
         elif args[k] == "-":
             state.directory = state.previous
         else:
-            state.directory = resolve_dir(args[k], state.directory)
+            state.directory = resolve_dir(args[k], state.directory, state.vars)
         state.previous = before
     elif head == "popd":
         state.directory = state.dirstack.pop() if state.dirstack else None

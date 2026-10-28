@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 
 GUARD = os.path.join(os.path.dirname(__file__), "..", "hooks", "guard-bash.sh")
@@ -30,6 +31,23 @@ def make_repo(root, name, branch):
 
 # (cwd key, command). {MAIN} and {FEAT} expand to the temp repos' paths.
 BLOCK = [
+    # a variable holding $PWD / $(pwd) / the toplevel means the directory at ASSIGNMENT time
+    ("main", 'HERE=$PWD; cd {FEAT} && git status; cd "$HERE" && git commit -m x'),
+    ("main", "HERE=$(pwd); cd {FEAT}; ls; cd $HERE; git commit -m x"),
+    ("main", 'HERE=$PWD; cd {FEAT} && git status; git -C "$HERE" commit -m x'),
+    ("main", "ROOT=$(git rev-parse --show-toplevel); cd {FEAT}; git -C $ROOT commit -m x"),
+    # a stale value must not survive unset or a loop variable of the same name (fails closed)
+    ("main", "D={FEAT}; unset D; cd $D && git commit -m x"),
+    ("feat", "D={FEAT}; for D in {MAIN}; do cd $D && git commit -m x; done"),
+    ("feat", "D={FEAT}; select D in {MAIN}; do cd $D; git commit -m x; done"),
+    ("feat", "D={FEAT}; while read D; do cd $D; git commit -m x; done < list"),
+    ("feat", "D={FEAT}; read -r D < list; cd $D && git commit -m x"),
+    # a same-command variable pointing at a protected checkout, and an unassigned one (fails closed)
+    ("feat", 'D={MAIN}; cd "$D" && git commit -m x'),
+    ("feat", "D={MAIN}; git -C $D commit -m x"),
+    ("feat", 'D={MAIN}; env -C "$D" git commit -m x'),
+    ("feat", 'cd "$UNASSIGNED_DIR" && git commit -m x'),
+    ("feat", 'D=a; D={MAIN}; cd "$D" && git commit -m x'),
     # git revert, every spelling the review found
     ("feat", "git revert HEAD"),
     ("feat", "git -C /x revert HEAD"),
@@ -204,6 +222,15 @@ BLOCK = [
 ]
 
 ALLOW = [
+    # $PWD captured at assignment time still means that directory after later cds
+    ("feat", 'HERE=$PWD; cd {MAIN} && git status; cd "$HERE" && git commit -m x'),
+    ("feat", "HERE=$(pwd); cd {MAIN}; ls; cd $HERE; git commit -m x"),
+    # variables assigned earlier in the same command, used as cd / -C / env -C targets
+    ("feat", 'D={FEAT}; cd "$D" && git commit -m x'),
+    ("feat", "export D={FEAT} && cd $D && git commit -m x"),
+    ("feat", 'D={FEAT}; git -C "$D" commit -m x'),
+    ("feat", 'D={FEAT}; env -C "$D" git commit -m x'),
+    ("main", 'D={FEAT}; cd "${D}" && git commit -m x'),
     # normal work on a feature branch
     ("feat", "git commit -m x"),
     ("feat", "git commit -am 'x'"),
@@ -364,6 +391,15 @@ class GuardTest(unittest.TestCase):
     def test_unparseable_non_git_command_allowed(self):
         r = self.run_guard(self.repos["feat"], "echo 'unterminated")
         self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_self_doubling_assignments_do_not_exhaust_memory_or_time(self):
+        # Each A=$A$A doubles the value; without a cap this grows exponentially inside a safety hook.
+        cmd = "A=" + self.repos["feat"] + "".join("; A=$A$A" for _ in range(20)) + '; cd "$A" && git commit -m x'
+        start = time.monotonic()
+        r = subprocess.run([GUARD], input=json.dumps(
+            {"cwd": self.repos["feat"], "tool_input": {"command": cmd}}), capture_output=True, text=True, timeout=20)
+        self.assertLess(time.monotonic() - start, 10)
+        self.assertEqual(r.returncode, 2, r.stderr)  # the oversized value is dropped, so the target is unresolved
 
     def test_pathological_input_blocks_with_a_message_not_a_traceback(self):
         for cmd in ["git -C 'a\x00b' commit -m x", "git -C \ud800 commit -m x", "cd 'a\x00b' && git commit -m x"]:
