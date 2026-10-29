@@ -55,6 +55,10 @@ This repo is also a Claude Code plugin and a single-plugin marketplace (`.claude
 - It is a guard against mistakes, not a sandbox. Out of scope: variable indirection (`g=git; $g revert`), aliases, scripts, `ssh`/`watch`/`parallel`/`env -S` wrappers, `GIT_*` environment overrides, and deliberate obfuscation. Edits made through tools other than Bash are not covered.
 - It blocks `--no-verify` unconditionally, which is stricter than the law's "unless the user explicitly requests it". If the user requests it, the user runs the command themselves (the `!` prefix) or disables the plugin for that session.
 
+A plugin-root `CLAUDE.md` is not loaded as context, so the laws still reach a project through the `@import` above; the plugin adds enforcement only.
+
+Install: `claude plugin marketplace add andkii/eng-laws#<tag>` then `claude plugin install eng-laws@eng-laws`.
+
 ### Git hooks setup
 
 Git runs hooks only when `core.hooksPath` points at them, and that setting is per clone (every worktree of a clone shares it). The guard blocks any Bash command that mentions `core.hooksPath`, so a person runs this once in each clone:
@@ -64,6 +68,25 @@ git config core.hooksPath ~/.claude/eng-laws/githooks
 ```
 
 Use the absolute path of the pinned checkout (the shell expands `~` when you run it); a relative path would resolve inside each project and find nothing. Updating the pinned checkout updates the hooks. `--no-verify` skips both hooks, and changing `core.hooksPath` turns them off, which is why the guard keeps those two bans. Without this setup nothing protects the default branch except the laws and server-side branch protection, where the host offers it.
+
+### Block log
+
+Every block appends one JSON line to `${CLAUDE_PLUGIN_DATA}/blocks.jsonl`. Claude Code exports `CLAUDE_PLUGIN_DATA` to hook processes (hooks reference, "Command hook fields"); it resolves to `~/.claude/plugins/data/<id>/` (for this plugin, `~/.claude/plugins/data/eng-laws-eng-laws/`), is kept across plugin updates, and is deleted when the plugin is uninstalled from its last location. It is outside every repository. If the variable is unset or the write fails, logging is skipped silently and the block still happens.
+
+Each entry holds: `id` (8 hex chars, used to mark it), `ts` (UTC), `rule` (an id from `hooks/rules.py`), `sub` (git subcommand, `null` when unknown), `cwd` (basename only), and `cmd`. `cmd` is only the blocked git invocation's own words (at most 16), never the rest of the command line, so a secret in a chained `curl`, `docker login` or `export` cannot reach the log. For a command that would not parse (`unparseable-git`) it is the first 4 words from the first `git`; for an unreadable payload it is `null`. Each word is redacted on its own: a word containing whitespace (a commit message, a header value) becomes `<text>`, URL userinfo, values of `name=value` words whose name contains `pass`, `token`, `secret`, `key`, `auth` or `credential`, well-known token prefixes, and any 32+ character token-like string become `<redacted>`, `$HOME` becomes `~`, and the whole is capped at 200 characters. This is best effort: a secret passed as a bare git argument (`git commit -m hunter2`), or in an option whose name carries no secret word (`--push-option=secret=abc`), survives, and other absolute paths (for example `-C /path`) are kept, so treat the file as sensitive (it is created mode 0600). Long hex strings such as commit SHAs are redacted too. There is no rotation; delete the file to reset it.
+
+Read it (the path defaults to the data directory when `CLAUDE_PLUGIN_DATA` is set; otherwise pass `--file`):
+
+```sh
+python3 hooks/report.py --file ~/.claude/plugins/data/eng-laws-eng-laws/blocks.jsonl summary
+python3 hooks/report.py --file ... list --unreviewed
+python3 hooks/report.py --file ... mark <id> --note "dry run, not a real revert"          # false positive (default)
+python3 hooks/report.py --file ... mark <id> --verdict true-block
+```
+
+`summary` prints blocks, false positives (`fp`), confirmed true blocks (`true`) and unreviewed (`open`) per rule and per day. Marks are appended to the same file and the last mark for an id wins.
+
+### Delegating to Codex (machine setup)
 
 The laws reach Claude Code through the `@import` above and Codex through its own global instruction file. See the Delegation law for the policy. One-time setup per machine:
 
