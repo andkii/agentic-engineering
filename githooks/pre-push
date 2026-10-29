@@ -1,0 +1,10 @@
+#!/bin/sh
+# Refuse any push that updates or deletes refs/heads/master or refs/heads/main.
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  case "$remote_ref" in
+    refs/heads/master|refs/heads/main)
+      echo "pre-push: refusing to update '$remote_ref'. Open a PR from a feature branch." >&2
+      exit 1
+      ;;
+  esac
+done

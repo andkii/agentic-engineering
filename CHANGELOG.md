@@ -26,6 +26,7 @@ Law text only; no hook or agent behavior change, so no version bump.
 - Say "default branch (`main` or `master`)"; mark tooling names and ticket states as substitutable; state that pattern sections (Resource Lifecycle) are the only overridable ones; define when a hotfix may skip review; Production Diligence notes that enforcement tooling may be stricter than the law.
 - Testing: soften an uncited production claim ("can pass", not "have passed"); Resource Lifecycle likewise ("can cause"). Remove an incident-flavored sentence from No Silent Exit Paths.
 - Minor wording: worktree and `--no-verify` clarifications.
+- Guard narrowed to three bans: `git revert` (now allowed with `--help`/`-h`), `--no-verify`, and `core.hooksPath` changes. It no longer tracks the directory, branch or shell variables, and no longer judges pushes or commits to `main`/`master`. Rules `push-protected`, `push-all`, `push-wildcard`, `push-unknown-branch`, `commit-protected`, `commit-unknown-branch` are removed from `hooks/rules.py` (old log entries with those ids still report). New `githooks/pre-commit` and `githooks/pre-push` refuse commits on and pushes to `main`/`master`; each clone runs `git config core.hooksPath <absolute path to githooks>` once (see the README). Repositories that adopt this version without the setup lose default-branch protection.
 
 ## 0.1.1
 

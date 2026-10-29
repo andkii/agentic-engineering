@@ -1,0 +1,9 @@
+#!/bin/sh
+# Refuse commits on master or main.
+branch=$(git symbolic-ref --short -q HEAD)
+case "$branch" in
+  master|main)
+    echo "pre-commit: refusing to commit on '$branch'. Use a worktree branch and open a PR." >&2
+    exit 1
+    ;;
+esac
