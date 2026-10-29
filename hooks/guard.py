@@ -36,7 +36,7 @@ WRAPPERS = {
     "exec": {"-a"},
     "builtin": set(),
     "nohup": set(),
-    "time": set(),
+    "time": {"-f", "--format", "-o", "--output"},
     "nice": {"-n", "--adjustment"},
     "ionice": {"-c", "-n", "-p", "--class", "--classdata"},
     "setsid": set(),
@@ -413,6 +413,8 @@ def strip_prefix(words):
         w = words[i]
         name = os.path.basename(w)
         if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w) or w in KEYWORDS:
+            if w.upper().startswith("GIT_CONFIG") and "core.hookspath" in w.lower():
+                raise Block(rules.HOOKS_PATH, "setting core.hooksPath through GIT_CONFIG_* disables hooks; that is banned like --no-verify.")
             i += 1
         elif w == "function":
             i += 2
