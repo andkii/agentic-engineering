@@ -406,6 +406,15 @@ def check_subcommand(sub, rest):
 
 # --------------------------------------------------------------- evaluation
 
+DECLARATIONS = {"export", "declare", "typeset", "readonly", "local"}
+
+
+def check_git_config_env(word):
+    """`GIT_CONFIG_KEY_n=core.hooksPath` (or GIT_CONFIG_PARAMETERS) sets core.hooksPath for git."""
+    if word.upper().startswith("GIT_CONFIG") and "core.hookspath" in word.lower():
+        raise Block(rules.HOOKS_PATH, "setting core.hooksPath through GIT_CONFIG_* disables hooks; that is banned like --no-verify.")
+
+
 def strip_prefix(words):
     """Drop VAR=value, shell keywords, and wrapper commands."""
     i = 0
@@ -413,8 +422,7 @@ def strip_prefix(words):
         w = words[i]
         name = os.path.basename(w)
         if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w) or w in KEYWORDS:
-            if w.upper().startswith("GIT_CONFIG") and "core.hookspath" in w.lower():
-                raise Block(rules.HOOKS_PATH, "setting core.hooksPath through GIT_CONFIG_* disables hooks; that is banned like --no-verify.")
+            check_git_config_env(w)
             i += 1
         elif w == "function":
             i += 2
@@ -440,7 +448,10 @@ def run_command(words, depth):
     if not words:
         return
     head = os.path.basename(words[0])
-    if head == "git":
+    if head in DECLARATIONS:
+        for w in words[1:]:
+            check_git_config_env(w)
+    elif head == "git":
         try:
             check_git(words[1:])
         except Block as block:

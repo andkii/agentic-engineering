@@ -91,6 +91,9 @@ BLOCK = [
     ("feat", "env GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git push origin HEAD"),
     ("feat", "/usr/bin/time -f %e git push --no-verify origin HEAD"),
     ("feat", "time -o /tmp/t git commit -n -m x"),
+    ("feat", "export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null; git commit -m x"),
+    ("feat", "declare -x GIT_CONFIG_KEY_0=core.hooksPath; git push origin HEAD"),
+    ("feat", "export GIT_CONFIG_PARAMETERS=\"'core.hookspath'='/dev/null'\"; git commit -m x"),
     ("feat", "git config --remove-section core"),
     ("feat", "git config remove-section core"),
     ("feat", "git config rename-section core disabled"),
@@ -128,6 +131,7 @@ BLOCK = [
 
 ALLOW = [
     ("feat", "git revert --help"),
+    ("feat", "export GIT_AUTHOR_NAME=x; git commit -m y"),
     ("feat", "git config --remove-section user"),
     ("feat", "git config remove-section user"),
     ("feat", "git config user.name x"),
