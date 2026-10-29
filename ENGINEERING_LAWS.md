@@ -12,7 +12,7 @@ Context that isn't written down doesn't exist for the next session.
 
 ### Work Creation
 
-Two modes — pick the right one:
+Three modes — pick the right one:
 
 **Planned work** (features, multi-session initiatives, architecture changes): A Plane ticket must exist with problem, rationale, acceptance criteria, and a link to `docs/designs/FEATURE-NAME.md` for anything touching architecture or data schema. The ticket description is the agent brief — if incomplete, ask, and put the answer in the ticket.
 
