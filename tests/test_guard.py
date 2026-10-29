@@ -30,9 +30,6 @@ def make_repo(root, name, branch):
 
 # (cwd key, command). {MAIN} and {FEAT} expand to the temp repos' paths.
 BLOCK = [
-    # a variable holding $PWD / $(pwd) / the toplevel means the directory at ASSIGNMENT time
-    # a stale value must not survive unset or a loop variable of the same name (fails closed)
-    # a same-command variable pointing at a protected checkout, and an unassigned one (fails closed)
     # git revert, every spelling the review found
     ("feat", "git revert HEAD"),
     ("feat", "git -C /x revert HEAD"),
@@ -98,6 +95,9 @@ BLOCK = [
     # DWIM and tracking checkouts create the protected branch locally
     # git config that disables hooks, and a protected default in ${VAR:-default}
     ("feat", "git config core.hooksPath /dev/null"),
+    ("feat", "git config --remove-section core"),
+    ("feat", "git config --rename-section core disabled"),
+    ("feat", "git -C . config --local --remove-section CORE"),
     ("feat", "git -C . config --local core.hooksPath x"),
     # attached -c and --config-env spellings that disable hooks
     ("feat", "git -ccore.hooksPath=/dev/null commit -m x"),
@@ -130,6 +130,8 @@ BLOCK = [
 
 ALLOW = [
     ("feat", "git revert --help"),
+    ("feat", "git config --remove-section user"),
+    ("feat", "git config user.name x"),
     ("feat", "git revert -h"),
     # $PWD captured at assignment time still means that directory after later cds
     ("feat", 'HERE=$PWD; cd {MAIN} && git status; cd "$HERE" && git commit -m x'),

@@ -384,10 +384,18 @@ def check_git(args):
         raise
 
 
+def removes_core_section(rest):
+    """`git config --remove-section core` / `--rename-section core x` drops core.hooksPath with it."""
+    for i, tok in enumerate(rest[:-1]):
+        if tok in ("--remove-section", "--rename-section") and rest[i + 1].lower() == "core":
+            return True
+    return False
+
+
 def check_subcommand(sub, rest):
     if sub == "revert" and not {"-h", "--help"} & set(rest):
         raise Block(rules.GIT_REVERT, "git revert is banned. Use git reset to undo commits.")
-    if sub == "config" and "core.hookspath" in " ".join(rest).lower():
+    if sub == "config" and ("core.hookspath" in " ".join(rest).lower() or removes_core_section(rest)):
         raise Block(rules.HOOKS_PATH, "changing core.hooksPath disables hooks; that is banned like --no-verify.")
     if sub in NO_VERIFY_COMMANDS:
         check_no_verify(sub, rest)
