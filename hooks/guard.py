@@ -387,10 +387,11 @@ def check_git(args):
 def removes_core_section(rest):
     """Dropping or renaming the core config section takes core.hooksPath with it, and renaming another
     section to `core` creates one. Covers `--remove-section`/`--rename-section` and the newer
-    `remove-section`/`rename-section` subcommands: any operand named core."""
+    `remove-section`/`rename-section` subcommands: any later word named core, because a `--file <path>`
+    option may sit between the action and its operands."""
     for i, tok in enumerate(rest):
         if tok in ("--remove-section", "--rename-section", "remove-section", "rename-section"):
-            if any(op.lower() == "core" for op in rest[i + 1:i + 3]):
+            if any(op.lower() == "core" for op in rest[i + 1:]):
                 return True
     return False
 

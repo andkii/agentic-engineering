@@ -97,6 +97,9 @@ BLOCK = [
     ("feat", "git config --remove-section core"),
     ("feat", "git config remove-section core"),
     ("feat", "git config rename-section core disabled"),
+    ("feat", "git config remove-section --file .git/config core"),
+    ("feat", "git config rename-section -f .git/config core disabled"),
+    ("feat", "git config --file .git/config --remove-section core"),
     ("feat", "git config rename-section include core"),
     ("feat", "git config --rename-section include core"),
     ("feat", "git config --rename-section core disabled"),
@@ -134,6 +137,7 @@ ALLOW = [
     ("feat", "export GIT_AUTHOR_NAME=x; git commit -m y"),
     ("feat", "git config --remove-section user"),
     ("feat", "git config remove-section user"),
+    ("feat", "git config remove-section --file .git/config user"),
     ("feat", "git config user.name x"),
     ("feat", "git revert -h"),
     # everyday git that must stay allowed
