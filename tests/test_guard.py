@@ -67,8 +67,6 @@ BLOCK = [
     ("feat", "git push --no-verify origin feat"),
     ("feat", "git merge --no-verify x"),
     ("feat", "git rebase --no-verify x"),
-    # direct pushes to a protected branch, forced or not
-    # commit/push while the working branch is protected
     # shell control structures: git inside a body is still judged
     ("feat", "if true; then git commit --no-verify -m x; fi"),
     ("feat", "{ git revert HEAD; }"),
@@ -83,28 +81,24 @@ BLOCK = [
     ("feat", "echo '<<EOF'\ngit revert HEAD"),
     ("feat", 'echo "a << b"\ngit revert HEAD'),
     ("feat", "bash <<'EOF'\ngit revert HEAD\nEOF"),
-    # directory tracking: scoping, cd options, variable targets
-    # branch switched earlier in the same chain
     # unquoted command substitution splits nothing: the rest of the command is still judged
     ("feat", "git commit -m $(cat msg.txt) --no-verify"),
     ("feat", "git commit -m $(date) -n"),
     ("feat", "git merge $(git branch --show-current) --no-verify"),
-    # a protected name reaching a push through a variable assigned in the same command
-    # cd - returns to the directory before the last cd
-    # a new directory under a protected checkout is still on that branch
-    # DWIM and tracking checkouts create the protected branch locally
-    # git config that disables hooks, and a protected default in ${VAR:-default}
+    # git config that disables hooks, including dropping or renaming the core section
     ("feat", "git config core.hooksPath /dev/null"),
     ("feat", "git config --remove-section core"),
+    ("feat", "git config remove-section core"),
+    ("feat", "git config rename-section core disabled"),
+    ("feat", "git config rename-section include core"),
+    ("feat", "git config --rename-section include core"),
     ("feat", "git config --rename-section core disabled"),
     ("feat", "git -C . config --local --remove-section CORE"),
     ("feat", "git -C . config --local core.hooksPath x"),
     # attached -c and --config-env spellings that disable hooks
     ("feat", "git -ccore.hooksPath=/dev/null commit -m x"),
     ("feat", "git --config-env=core.hooksPath=H commit -m x"),
-    # the branch switched earlier applies to the directory where the switch ran
-    # a worktree created on a protected branch
-    # hooks disabled by other means
+    # other spellings that skip or disable hooks
     ("feat", "git am -3n x.patch"),
     ("main", "git am -n x.patch"),
     ("feat", "git am -n x.patch"),
@@ -131,6 +125,7 @@ BLOCK = [
 ALLOW = [
     ("feat", "git revert --help"),
     ("feat", "git config --remove-section user"),
+    ("feat", "git config remove-section user"),
     ("feat", "git config user.name x"),
     ("feat", "git revert -h"),
     # $PWD captured at assignment time still means that directory after later cds
@@ -162,7 +157,7 @@ ALLOW = [
     ("main", "git merge --ff-only origin/main"),
     ("main", "git push origin feat"),
     ("main", "git worktree add .claude/worktrees/x -b y origin/main"),
-    # directory and branch tracking that must not over-block
+    # commands that name main/master or move between directories and must stay allowed
     ("main", "cd {FEAT} && git commit -m x"),
     ("feat", "(cd {MAIN} && true); git commit -m x"),
     ("feat", "cd {MAIN} && cd {FEAT} && git commit -m x"),

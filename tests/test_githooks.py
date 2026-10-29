@@ -45,6 +45,37 @@ class GitHooksTest(unittest.TestCase):
         finally:
             git(self.work, "checkout", "-q", "feature")
 
+    def test_merge_commit_on_main_is_refused(self):
+        git(self.work, "checkout", "-q", "main")
+        try:
+            r = git(self.work, *IDENT, "merge", "--no-ff", "-m", "m", "feature", check=False)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("refusing", r.stderr)
+        finally:
+            git(self.work, "merge", "--abort", check=False)
+            git(self.work, "checkout", "-q", "feature")
+
+    def test_am_commit_on_main_is_refused(self):
+        git(self.work, "checkout", "-q", "-b", "patchsrc", "main")
+        path = os.path.join(self.work, "p.txt")
+        with open(path, "w") as handle:
+            handle.write("p\n")
+        git(self.work, "add", "p.txt")
+        git(self.work, *IDENT, "commit", "-q", "-m", "patch")
+        patch = git(self.work, "format-patch", "-1", "--stdout").stdout
+        git(self.work, "checkout", "-q", "main")
+        patch_file = os.path.join(self.root, "p.patch")
+        with open(patch_file, "w") as handle:
+            handle.write(patch)
+        try:
+            r = git(self.work, *IDENT, "am", patch_file, check=False)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("refusing", r.stderr + r.stdout)
+        finally:
+            git(self.work, "am", "--abort", check=False)
+            git(self.work, "checkout", "-q", "feature")
+            git(self.work, "branch", "-q", "-D", "patchsrc")
+
     def test_commit_on_feature_is_allowed(self):
         r = git(self.work, *IDENT, "commit", "--allow-empty", "-m", "x", check=False)
         self.assertEqual(r.returncode, 0, r.stderr)
