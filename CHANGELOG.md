@@ -26,7 +26,7 @@ Law text only; no hook or agent behavior change, so no version bump.
 - Say "default branch (`main` or `master`)"; mark tooling names and ticket states as substitutable; state that pattern sections (Resource Lifecycle) are the only overridable ones; define when a hotfix may skip review; Production Diligence notes that enforcement tooling may be stricter than the law.
 - Testing: soften an uncited production claim ("can pass", not "have passed"); Resource Lifecycle likewise ("can cause"). Remove an incident-flavored sentence from No Silent Exit Paths.
 - Minor wording: worktree and `--no-verify` clarifications.
-- Remove two record-keeping rules that duplicate other records: the per-slice checkpoint step in Strategic Execution (the PR or ticket already carries status, gaps and risks) and the requirement to name the delegate's model and effort per class of task. The PR still states what was delegated, to which agent, and that the output was verified.
+- Remove two record-keeping rules that duplicate other records: the per-slice checkpoint step in Strategic Execution (the PR or ticket already carries status, and the outcome audit records what was delivered, deferred and next; the checkpoint's separate note on gaps and risks is dropped, so risks are no longer an explicit requirement) and the requirement to name the delegate's model and effort per class of task. The PR still states what was delegated, to which agent, and that the output was verified.
 
 ## 0.1.1
 
