@@ -28,8 +28,9 @@ For each criterion, output one line:
 
 Read the code that implements each criterion; partial reads do not count: trace the full path.
 
-Then, one line each:
-- `FINDING <path>:<line> <defect in the changed files that no criterion covers>`
-- `UNCOVERED <path>:<line> <behavior in the changed files that no criterion covers>`
+Then, one line for each hunk in the changed files that maps to no criterion (a defect, or an unrequested addition):
+- `FINDING <path>:<line> <defect or unrequested change>`
+
+Every `FINDING` and every `FAIL` is an open finding for the author to resolve before review output is accepted.
 
 Never claim behavior you did not read. No praise, no preamble.

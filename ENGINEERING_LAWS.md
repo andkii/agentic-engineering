@@ -25,7 +25,7 @@ Three modes — pick the right one:
 Before a session closes:
 - **Decisions or constraints** not obvious from the code → `docs/sessions/YYYY-MM-DD-slug.md`
 - **User complaints that drove a fix** → `docs/feedback/YYYY-MM-DD-slug.md` (one paragraph: what was reported, what was done, what was deferred)
-- Plane ticket state updated
+- Plane ticket state updated (ticketed work)
 - Audit `git worktree list`. Remove only clean worktrees whose exact branch HEAD is verified merged; preserve dirty, unmerged, or changed worktrees, then run `git worktree prune`.
 
 Run `/session-close` to walk through this checklist interactively.
@@ -42,11 +42,11 @@ The adversarial review above must be cold. An author's context biases their judg
 
 - **Different context**: the reviewer is a separate agent or session. The author never reviews their own diff.
 - **Minimal input**: the reviewer receives only the diff and the acceptance criteria. Never the author's plan, reasoning, or session history.
-- **Read-only**: the reviewer reports; it does not edit or fix. It may run commands that only read (tests, queries, `git diff`), never one that changes files, git state, or remote systems.
+- **Read-only**: the reviewer reports; it does not edit or fix. It runs a command only after establishing that it has no side effects; tests and queries are not assumed to be read-only. If that cannot be established, the criterion is `UNVERIFIABLE` and names the command. It never runs a command that changes files, git state, or remote systems.
 - **Fixed output**: one line per acceptance criterion (`PASS`, `FAIL`, or `UNVERIFIABLE`), then one line per finding. `PASS` and `FAIL` carry `path:line` evidence. `UNVERIFIABLE` names the command or manual check that would prove it instead.
 - **Disputes are settled by evidence**: if the author disagrees with a finding, they cite `path:line`, not argument.
 
-One review, one gate. The reviewer hunts defects in the diff and checks every acceptance criterion, running the command a criterion names when it needs one. The output is posted as a ticket comment before In Review. A reviewer with repository access is cold on a best-effort basis, and for `/code-review` cold means a fresh session that was not given the author's plan. A reviewer that cannot run commands returns `UNVERIFIABLE` for such criteria, and the author runs the named command. Prefer a reviewer on a usage budget separate from the author's (for example another vendor's agent), so review does not spend the author's usage. The cost ceiling above applies: one reviewer, no parallel fan-out.
+One review, one gate. The reviewer hunts defects in the diff and checks every acceptance criterion, running the command a criterion names when it needs one. The output is posted as a ticket comment (a PR comment for docs-only work) before In Review. A reviewer with repository access is cold on a best-effort basis, and for `/code-review` cold means a fresh session that was not given the author's plan. A reviewer that cannot run commands returns `UNVERIFIABLE` for such criteria, and the author runs the named command. Prefer a reviewer on a usage budget separate from the author's (for example another vendor's agent), so review does not spend the author's usage. The cost ceiling above applies: one reviewer, no parallel fan-out.
 
 ### Provenance
 
@@ -181,7 +181,8 @@ Both agents commit, push, and open PRs independently. Branches reach the default
 
 Ticket states and the `docs/` paths are conventions; map them onto your own tracker and repository layout.
 
-- **Planned work**: Plane ticket required before starting (problem, rationale, AC, design doc link for arch changes).
+- **Planned work** (other than docs-only work): Plane ticket required before starting (problem, rationale, AC, design doc link for arch changes).
+- **Docs-only work**: no ticket; see Work Creation.
 - **Reactive work**: no ticket required — log outcome in `docs/feedback/YYYY-MM-DD-slug.md`.
 - Session start: for ticketed work, read the ticket description and any linked design docs before touching code.
 - Move to **In Progress** when starting ticketed work. Run the cold review (including the hotfix exception stated there) and post its output before moving to **Blocked/In Review** (docs-only work has no ticket states: the review output goes on the PR and the PR is ready for the owner when the review has no open finding).
