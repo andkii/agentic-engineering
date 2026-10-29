@@ -43,7 +43,7 @@ This repo is also a Claude Code plugin and a single-plugin marketplace (`.claude
 | Component | Path | What it does |
 |---|---|---|
 | Bash guard hook | `hooks/guard-bash.sh` (wrapper) and `hooks/guard.py`, registered in `hooks/hooks.json` | Blocks `git revert`; `--no-verify` (including `commit -n`, `am -n`, abbreviations, `-c core.hooksPath`, and `git config core.hooksPath`); any push whose destination is `main`/`master`; and `git commit` while the branch is `main`/`master` |
-| Verifier agent | `agents/verifier.md` | Read-only (`Read, Grep, Glob`) evaluator that checks acceptance criteria against the changed files with `file:line` evidence |
+| Verifier agent | `agents/verifier.md` | Reviewer that checks acceptance criteria and hunts defects in the changed files with `file:line` evidence; runs read-only commands (`Read, Grep, Glob, Bash`) |
 | Block log and report | `hooks/blocklog.py`, `hooks/rules.py`, `hooks/report.py` | Records each block (rule id, git subcommand, time, redacted command) so false positives can be counted per rule; see "Block log" below |
 | Guard tests | `tests/test_guard.py` | Regression corpus of block and allow cases. Run `python3 -m unittest discover -s tests` |
 

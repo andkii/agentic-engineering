@@ -16,6 +16,8 @@ Two modes — pick the right one:
 
 **Planned work** (features, multi-session initiatives, architecture changes): A Plane ticket must exist with problem, rationale, acceptance criteria, and a link to `docs/designs/FEATURE-NAME.md` for anything touching architecture or data schema. The ticket description is the agent brief — if incomplete, ask, and put the answer in the ticket.
 
+**Docs-only work** (every changed file is under `docs/` or is a top-level `*.md` file, as listed by `git diff --name-only <default-branch>...HEAD`): No ticket required. It still gets a worktree, a branch, a PR and the one cold review.
+
 **Reactive work** (prod bugs, user-reported issues, quick fixes): No Plane ticket required. Log the outcome in `docs/feedback/YYYY-MM-DD-slug.md` when done.
 
 ### Session End
@@ -30,9 +32,9 @@ Run `/session-close` to walk through this checklist interactively.
 
 ### Adversarial Review
 
-Before moving any ticket from In Progress → Blocked/In Review, run `/code-review medium` and post findings as a Plane comment. Hotfixes may skip both this review and the cold verifier (see Cold Review) only if production is degraded and the fix cannot wait for a review (minutes, not hours) — document that it was skipped and why.
+Before moving any ticket from In Progress → Blocked/In Review, run one cold review (see Cold Review) and post its output as a Plane comment. Hotfixes may skip this review only if production is degraded and the fix cannot wait for a review (minutes, not hours) — document that it was skipped and why.
 
-**`/code-review medium` is the permanent ceiling. Never use `high`, `max`, or `ultra` — they spawn multiple parallel cloud agents and consume more tokens than the work itself.**
+**When `/code-review` is the reviewer, `medium` is the permanent ceiling. Never use `high`, `max`, or `ultra` — they spawn multiple parallel cloud agents and consume more tokens than the work itself.**
 
 ### Cold Review
 
@@ -40,11 +42,11 @@ The adversarial review above must be cold. An author's context biases their judg
 
 - **Different context**: the reviewer is a separate agent or session. The author never reviews their own diff.
 - **Minimal input**: the reviewer receives only the diff and the acceptance criteria. Never the author's plan, reasoning, or session history.
-- **Read-only**: the reviewer reports; it does not edit or fix.
+- **Read-only**: the reviewer reports; it does not edit or fix. It may run commands that only read (tests, queries, `git diff`), never one that changes files, git state, or remote systems.
 - **Fixed output**: one line per acceptance criterion (`PASS`, `FAIL`, or `UNVERIFIABLE`) with `path:line` evidence, then one line per finding. `UNVERIFIABLE` names the command or manual check that would prove it.
 - **Disputes are settled by evidence**: if the author disagrees with a finding, they cite `path:line`, not argument.
 
-Two reviews, one gate. `/code-review medium` hunts defects in the diff; the cold verifier checks the acceptance criteria. Both must be cold, both run before In Review, and both outputs are posted as a ticket comment. `/code-review` reads the repo, so for it cold means a fresh session that was not given the author's plan; treat that as best-effort. The verifier's input is strictly the diff and the criteria. The cost ceiling above applies to each: one reviewer, no parallel fan-out. A verifier without a shell cannot run commands, so any criterion that needs one comes back `UNVERIFIABLE` and the author runs the named command.
+One review, one gate. The reviewer hunts defects in the diff and checks every acceptance criterion, running the command a criterion names when it needs one. The output is posted as a ticket comment before In Review. A reviewer with repository access is cold on a best-effort basis, and for `/code-review` cold means a fresh session that was not given the author's plan. A reviewer that cannot run commands returns `UNVERIFIABLE` for such criteria, and the author runs the named command. Prefer a reviewer on a usage budget separate from the author's (for example another vendor's agent), so review does not spend the author's usage. The cost ceiling above applies: one reviewer, no parallel fan-out.
 
 ### Provenance
 
@@ -182,7 +184,7 @@ Ticket states and the `docs/` paths are conventions; map them onto your own trac
 - **Planned work**: Plane ticket required before starting (problem, rationale, AC, design doc link for arch changes).
 - **Reactive work**: no ticket required — log outcome in `docs/feedback/YYYY-MM-DD-slug.md`.
 - Session start: read the ticket description and any linked design docs before touching code.
-- Move to **In Progress** when starting. Run both reviews (Adversarial Review and Cold Review, including the hotfix exception stated there) and post findings before moving to **Blocked/In Review**.
+- Move to **In Progress** when starting. Run the cold review (including the hotfix exception stated there) and post its output before moving to **Blocked/In Review**.
 - Never move to **Done** — reserved for user approval.
 - Commit format: `<type>(<scope>): <description> [PLANE-###]`
 

@@ -26,6 +26,7 @@ Law text only; no hook or agent behavior change, so no version bump.
 - Say "default branch (`main` or `master`)"; mark tooling names and ticket states as substitutable; state that pattern sections (Resource Lifecycle) are the only overridable ones; define when a hotfix may skip review; Production Diligence notes that enforcement tooling may be stricter than the law.
 - Testing: soften an uncited production claim ("can pass", not "have passed"); Resource Lifecycle likewise ("can cause"). Remove an incident-flavored sentence from No Silent Exit Paths.
 - Minor wording: worktree and `--no-verify` clarifications.
+- Replace the two cold reviews (`/code-review medium` plus the shell-less verifier) with one reviewer that hunts defects and checks the acceptance criteria, may run read-only commands, and should run on a usage budget separate from the author's. `agents/verifier.md` gains `Bash` (read-only by instruction; the tool list cannot enforce it). Docs-only work needs no ticket; the one review stays.
 
 ## 0.1.1
 
