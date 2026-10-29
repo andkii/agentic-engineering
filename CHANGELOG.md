@@ -2,7 +2,7 @@
 
 ## 0.1.4
 
-- Replace the two cold reviews (`/code-review medium` plus the shell-less verifier) with one reviewer that hunts defects and checks the acceptance criteria, may run read-only commands, and should run on a usage budget separate from the author's. `agents/verifier.md` gains `Bash` (read-only by instruction; the tool list cannot enforce it). Docs-only work needs no ticket; the one review stays. Plugin version 0.1.4 because agent behavior changed. A delegated reviewer's report is not reviewed again; Plane Workflow covers docs-only work (no ticket id, review output on the PR).
+- Replace the two cold reviews (`/code-review medium` plus the verifier) with one reviewer that hunts defects and checks the acceptance criteria. A reviewer may run commands only inside a sandbox the tool enforces as read-only (for example a Codex review in a read-only sandbox) and should run on a usage budget separate from the author's. `agents/verifier.md` keeps its read-only tool list (a plugin agent's tool list cannot restrict `Bash` to read-only commands); its output now has `PASS`, `FAIL`, `UNVERIFIABLE` (open until the author runs the proof and records the result) and `FINDING` for every material defect or unmapped hunk. Docs-only work needs no ticket; the one review stays, with output on the PR. A delegated reviewer's report is not reviewed again. Plugin version 0.1.4 because agent behavior changed.
 
 ## 0.1.3
 
