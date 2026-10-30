@@ -43,7 +43,7 @@ This repo is also a Claude Code plugin and a single-plugin marketplace (`.claude
 | Component | Path | What it does |
 |---|---|---|
 | Bash guard hook | `hooks/guard-bash.sh` (wrapper) and `hooks/guard.py`, registered in `hooks/hooks.json` | Blocks `git revert`; `--no-verify` (including `commit -n`, `am -n`, abbreviations, `-c core.hooksPath`, and `git config core.hooksPath`); any push whose destination is `main`/`master`; and `git commit` while the branch is `main`/`master` |
-| Verifier agent | `agents/verifier.md` | Read-only (`Read, Grep, Glob`) evaluator that checks acceptance criteria against the changed files with `file:line` evidence |
+| Verifier agent | `agents/verifier.md` | Read-only (`Read, Grep, Glob`) evaluator that checks acceptance criteria against the changed files with `file:line` evidence; criteria that need a command come back `UNVERIFIABLE`. A reviewer with a shell must run in a sandbox its tool enforces as read-only (for example a Codex review), because a plugin agent's tool list cannot restrict `Bash` to read-only commands |
 | Block log and report | `hooks/blocklog.py`, `hooks/rules.py`, `hooks/report.py` | Records each block (rule id, git subcommand, time, redacted command) so false positives can be counted per rule; see "Block log" below |
 | Guard tests | `tests/test_guard.py` | Regression corpus of block and allow cases. Run `python3 -m unittest discover -s tests` |
 
@@ -89,6 +89,8 @@ The laws reach Claude Code through the `@import` above and Codex through its own
 4. **Keep a project's `AGENTS.md` to project parameters.** Do not copy the laws into it; two copies drift.
 
 What the plugin does: `/codex:review` and `/codex:adversarial-review` are read-only; `/codex:rescue` hands a task to Codex, by default with a `workspace-write` sandbox and no approval prompts, in the git root of the session's working directory. It may tighten the wording of your task with its own prompting skill, but it adds no laws, so the laws arrive only through the files above. Its result comes back unreviewed. The rescue agent adds `--write` by default; to keep a rescue read-only, say so in the request (diagnosis or research only, no edits), which the agent's instructions treat as a reason to omit `--write`. The command has no working-directory option, so write delegation needs a Claude session started inside the worktree.
+
+Use the plugin for every Codex interaction rather than calling `codex exec` directly. Reviews: `/codex:adversarial-review --wait --base <ref> <criteria as focus text>` (the slash command is typed by a person; an agent runs the same review through `node <plugin dir>/scripts/codex-companion.mjs adversarial-review ...`, which the command wraps). Tasks, including writes: `/codex:rescue`, or the `codex:codex-rescue` subagent. A direct `codex exec "<prompt>"` waits for stdin to end when stdin is piped and a prompt argument is also given (`codex exec --help`: stdin is "appended as a `<stdin>` block"), so it hangs in a non-interactive shell unless stdin is closed (`< /dev/null`); the plugin talks to `codex app-server` instead.
 
 Not verified: whether the guard in this repository can be registered as a Codex `PreToolUse` hook (the Codex docs describe such an event with the same stdin JSON and exit-2 contract), whether Codex rules cover commands run inside its sandbox, and whether a worktree under a trusted project inherits the project's trust. Until those are verified, use Codex for read-only work only, per the Delegation law.
 

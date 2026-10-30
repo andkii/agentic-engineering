@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- Replace the two cold reviews (`/code-review medium` plus the verifier) with one reviewer that hunts defects and checks the acceptance criteria. A reviewer may run commands only inside a sandbox the tool enforces as read-only (for example a Codex review in a read-only sandbox) and should run on a usage budget separate from the author's. `agents/verifier.md` keeps its read-only tool list (a plugin agent's tool list cannot restrict `Bash` to read-only commands); its output now has `PASS`, `FAIL`, `UNVERIFIABLE` (open until the author runs the proof and records the result) and `FINDING` for every material defect or unmapped hunk. Docs-only work needs no ticket; the one review stays, with output on the PR. A delegated reviewer's report is not reviewed again. Plugin version 0.1.4 because agent behavior changed.
+
 ## 0.1.3
 
 - Guard: expand variables assigned earlier in the same command when resolving `cd`, `git -C`, `env -C` and `git worktree add` targets. `D=/path; cd "$D" && git commit` was blocked as an unresolved directory even when `$D` was a feature checkout; a variable pointing at a protected checkout is now blocked as such. A variable with no assignment in the command still fails closed. `$PWD`, `$(pwd)` and the toplevel inside an assigned value are expanded at assignment time (previously they would have been resolved against whatever directory was current at use). `unset`, a `for` loop variable, `select` and `read` forget an earlier assignment. A value over 4,096 characters is dropped, which also stops a self-doubling `A=$A$A` chain from hanging or exhausting memory in the hook.

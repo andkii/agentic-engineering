@@ -12,27 +12,29 @@ Context that isn't written down doesn't exist for the next session.
 
 ### Work Creation
 
-Two modes — pick the right one:
+Three modes — pick the right one:
 
 **Planned work** (features, multi-session initiatives, architecture changes): A Plane ticket must exist with problem, rationale, acceptance criteria, and a link to `docs/designs/FEATURE-NAME.md` for anything touching architecture or data schema. The ticket description is the agent brief — if incomplete, ask, and put the answer in the ticket.
 
-**Reactive work** (prod bugs, user-reported issues, quick fixes): No Plane ticket required. Log the outcome in `docs/feedback/YYYY-MM-DD-slug.md` when done.
+**Docs-only work** (planned changes only under `docs/` or in top-level `*.md` files, and not a design for a feature, architecture or data-schema change, and not a file that agents or tooling load as instructions, such as `CLAUDE.md`, `AGENTS.md` or these laws; those stay planned work): No ticket required. Before review, confirm it after `git fetch origin` by taking the union of `git diff --name-only origin/<default-branch>...HEAD` (committed), `git diff --name-only --cached` (staged), `git diff --name-only` (unstaged) and `git ls-files --others --exclude-standard` (untracked). A single `git diff` against the working tree is not enough: an unstaged change can mask a committed one. If any other path appears, it is planned or reactive work and the rules above apply. It still gets a worktree, a branch, a PR and the one cold review, and the PR description lists checkable acceptance criteria for the review to check.
+
+**Reactive work** (prod bugs, user-reported issues, quick fixes): No Plane ticket required. The PR description lists checkable acceptance criteria for the cold review. Log the outcome in `docs/feedback/YYYY-MM-DD-slug.md` when done.
 
 ### Session End
 
 Before a session closes:
 - **Decisions or constraints** not obvious from the code → `docs/sessions/YYYY-MM-DD-slug.md`
 - **User complaints that drove a fix** → `docs/feedback/YYYY-MM-DD-slug.md` (one paragraph: what was reported, what was done, what was deferred)
-- Plane ticket state updated
+- Plane ticket state updated (ticketed work)
 - Audit `git worktree list`. Remove only clean worktrees whose exact branch HEAD is verified merged; preserve dirty, unmerged, or changed worktrees, then run `git worktree prune`.
 
 Run `/session-close` to walk through this checklist interactively.
 
 ### Adversarial Review
 
-Before moving any ticket from In Progress → Blocked/In Review, run `/code-review medium` and post findings as a Plane comment. Hotfixes may skip both this review and the cold verifier (see Cold Review) only if production is degraded and the fix cannot wait for a review (minutes, not hours) — document that it was skipped and why.
+Before moving any ticket from In Progress → Blocked/In Review, run one cold review (see Cold Review) and post its output as a Plane comment. Hotfixes may skip this review only if production is degraded and the fix cannot wait for a review (minutes, not hours) — document that it was skipped and why.
 
-**`/code-review medium` is the permanent ceiling. Never use `high`, `max`, or `ultra` — they spawn multiple parallel cloud agents and consume more tokens than the work itself.**
+**When `/code-review` is the reviewer, `medium` is the permanent ceiling. Never use `high`, `max`, or `ultra` — they spawn multiple parallel cloud agents and consume more tokens than the work itself.**
 
 ### Cold Review
 
@@ -40,11 +42,11 @@ The adversarial review above must be cold. An author's context biases their judg
 
 - **Different context**: the reviewer is a separate agent or session. The author never reviews their own diff.
 - **Minimal input**: the reviewer receives only the diff and the acceptance criteria. Never the author's plan, reasoning, or session history.
-- **Read-only**: the reviewer reports; it does not edit or fix.
-- **Fixed output**: one line per acceptance criterion (`PASS`, `FAIL`, or `UNVERIFIABLE`) with `path:line` evidence, then one line per finding. `UNVERIFIABLE` names the command or manual check that would prove it.
+- **Read-only**: the reviewer reports; it does not edit or fix. It may run commands only inside a sandbox that the tool itself enforces as read-only (for example a Codex review in a read-only sandbox). The sandbox bounds local writes, not effects on other systems, so the reviewer runs commands only when the tool also disables network access and the environment holds no credentials; otherwise the criterion is `UNVERIFIABLE`. Even then it runs only commands that touch nothing outside the checkout, and a criterion whose command would is `UNVERIFIABLE` for the author to run. The reviewer never prints environment variables or credential files, and posts the exit status and the relevant output lines, not raw dumps. A reviewer without such a sandbox does not run commands; the criterion that needs one is `UNVERIFIABLE` and names the command, and it stays open until the author runs it and records the result.
+- **Fixed output**: one line per acceptance criterion (`PASS`, `FAIL`, or `UNVERIFIABLE`), then one line per finding. `PASS` and `FAIL` carry `path:line` evidence, or `proof: <command and its result>` when a command decided the criterion. `UNVERIFIABLE` names the command or manual check that would prove it instead.
 - **Disputes are settled by evidence**: if the author disagrees with a finding, they cite `path:line`, not argument.
 
-Two reviews, one gate. `/code-review medium` hunts defects in the diff; the cold verifier checks the acceptance criteria. Both must be cold, both run before In Review, and both outputs are posted as a ticket comment. `/code-review` reads the repo, so for it cold means a fresh session that was not given the author's plan; treat that as best-effort. The verifier's input is strictly the diff and the criteria. The cost ceiling above applies to each: one reviewer, no parallel fan-out. A verifier without a shell cannot run commands, so any criterion that needs one comes back `UNVERIFIABLE` and the author runs the named command.
+One review, one gate. The reviewer attacks the diff (failure and error paths, trust boundaries, retries, concurrency, partial failure) and checks every acceptance criterion, running the command a criterion names when it needs one. The output is posted as a ticket comment (a PR comment for unticketed work) before In Review. A reviewer with repository access is cold on a best-effort basis, and for `/code-review` cold means a fresh session that was not given the author's plan. A reviewer that cannot run commands returns `UNVERIFIABLE` for such criteria, and the author runs the named command and records the result. Prefer a reviewer on a usage budget separate from the author's (for example another vendor's agent), so review does not spend the author's usage. Any change made after the review invalidates its result: the same reviewer rechecks every criterion and open result against the final diff before In Review, as a continuation of the one review. The cost ceiling above applies: one reviewer, no parallel fan-out.
 
 ### Provenance
 
@@ -121,7 +123,7 @@ Work handed to another agent (another vendor's coding agent, a subagent, a backg
 - **Isolate writes.** Write delegation runs in a worktree on its own branch, started from a session whose working directory is that worktree, because delegates work in the git root of the delegating session's directory. A session in the default-branch checkout cannot delegate writes.
 - **Brief it checkably.** The delegate gets the objective, constraints, checkable acceptance criteria, and the absolute worktree path.
 - **Delegated reviewers.** A delegate acting as a cold reviewer gets only the diff and the criteria where its tool allows (see Cold Review). A reviewer that reads the repository itself is cold on a best-effort basis, as with `/code-review`. The cost ceiling applies to delegated reviews: one reviewer per review, no fan-out.
-- **Delegated output is untrusted until verified.** It passes the same cold review and the project's CI as direct work. Do not report it as done before that.
+- **Delegated implementation output is untrusted until verified.** It passes the same cold review and the project's CI as direct work. Do not report it as done before that. A delegated reviewer's report is not implementation output and gets no second cold review: the author checks each finding against the diff.
 - **No unattended loops.** No automatic review loops between agents (for example a stop-time gate that re-invokes another agent) unless a human is watching.
 - **Record it.** The project's parameters name the model and effort used per class of task. The PR states which parts were delegated, to which agent and model, and that the output was verified.
 
@@ -179,12 +181,13 @@ Both agents commit, push, and open PRs independently. Branches reach the default
 
 Ticket states and the `docs/` paths are conventions; map them onto your own tracker and repository layout.
 
-- **Planned work**: Plane ticket required before starting (problem, rationale, AC, design doc link for arch changes).
+- **Planned work** (other than docs-only work): Plane ticket required before starting (problem, rationale, AC, design doc link for arch changes).
+- **Docs-only work**: no ticket; see Work Creation.
 - **Reactive work**: no ticket required — log outcome in `docs/feedback/YYYY-MM-DD-slug.md`.
-- Session start: read the ticket description and any linked design docs before touching code.
-- Move to **In Progress** when starting. Run both reviews (Adversarial Review and Cold Review, including the hotfix exception stated there) and post findings before moving to **Blocked/In Review**.
+- Session start: for ticketed work, read the ticket description and any linked design docs before touching code.
+- Move to **In Progress** when starting ticketed work. Run the cold review (including the hotfix exception stated there) and post its output before moving to **Blocked/In Review**. Unticketed work (reactive or docs-only) has no ticket states: it gets the same cold review with the output posted as a PR comment, and the PR is ready for the owner when the review has no open `FAIL`, `FINDING` or `UNVERIFIABLE` result.
 - Never move to **Done** — reserved for user approval.
-- Commit format: `<type>(<scope>): <description> [PLANE-###]`
+- Commit format: `<type>(<scope>): <description> [PLANE-###]`. Unticketed work (reactive or docs-only) has no ticket id: use `<type>(<scope>): <description>`.
 
 ---
 
