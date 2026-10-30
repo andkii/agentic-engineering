@@ -16,9 +16,9 @@ Three modes — pick the right one:
 
 **Planned work** (features, multi-session initiatives, architecture changes): A Plane ticket must exist with problem, rationale, acceptance criteria, and a link to `docs/designs/FEATURE-NAME.md` for anything touching architecture or data schema. The ticket description is the agent brief — if incomplete, ask, and put the answer in the ticket.
 
-**Docs-only work** (planned changes only under `docs/` or in top-level `*.md` files): No ticket required. Before review, confirm it with `git diff --name-only origin/<default-branch>` after `git fetch origin`, plus `git ls-files --others --exclude-standard`, which together list committed, staged, unstaged and untracked paths. If any other path appears, it is planned or reactive work and the rules above apply. It still gets a worktree, a branch, a PR and the one cold review.
+**Docs-only work** (planned changes only under `docs/` or in top-level `*.md` files): No ticket required. Before review, confirm it after `git fetch origin` by taking the union of `git diff --name-only origin/<default-branch>...HEAD` (committed), `git diff --name-only --cached` (staged), `git diff --name-only` (unstaged) and `git ls-files --others --exclude-standard` (untracked). A single `git diff` against the working tree is not enough: an unstaged change can mask a committed one. If any other path appears, it is planned or reactive work and the rules above apply. It still gets a worktree, a branch, a PR and the one cold review, and the PR description lists checkable acceptance criteria for the review to check.
 
-**Reactive work** (prod bugs, user-reported issues, quick fixes): No Plane ticket required. Log the outcome in `docs/feedback/YYYY-MM-DD-slug.md` when done.
+**Reactive work** (prod bugs, user-reported issues, quick fixes): No Plane ticket required. The PR description lists checkable acceptance criteria for the cold review. Log the outcome in `docs/feedback/YYYY-MM-DD-slug.md` when done.
 
 ### Session End
 
