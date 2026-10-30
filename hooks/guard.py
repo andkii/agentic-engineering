@@ -56,7 +56,7 @@ NO_VERIFY_COMMANDS = {"commit", "push", "merge", "rebase", "cherry-pick", "am", 
 MAX_DEPTH = 5
 
 SHELL_BEFORE_HEREDOC = re.compile(
-    r"(?:^|[;&|(`]|\$\()\s*(?:(?:[\w./-]*/)?(?:" + "|".join(sorted(WRAPPERS)) + r")\s+(?:[^\s;&|()]+\s+)*?)*"
+    r"(?:^|[;&|(`]|\$\()\s*(?:(?:if|then|elif|else|do|while|until|!|\{)\s+)*(?:(?:[\w./-]*/)?(?:" + "|".join(sorted(WRAPPERS)) + r")\s+(?:[^\s;&|()]+\s+)*?)*"
     r"(?:[\w./-]*/)?(?:bash|sh|zsh|dash|ksh|ash)\b[^;&|]*$")
 HEREDOC = re.compile(r"<<(-?)[ \t]*(['\"]?)([^\s'\"<>;&|()]+)\2")
 
@@ -296,7 +296,7 @@ def tokenize(text):
             items.append(["("])
             i += 2
         elif c in "<>":
-            if in_word and "".join(word).isdigit():
+            if in_word and re.fullmatch(r"\d+|\{[A-Za-z_]\w*\}", "".join(word)):
                 word, in_word = [], False
             else:
                 end_word()
@@ -470,6 +470,14 @@ def run_command(words, depth):
             check_git(words[1:])
         except Block as block:
             block.argv = ["git", *words[1:]]
+            raise
+    elif head.startswith("git-"):
+        # `git-commit` and friends are the same subcommands run as separate executables.
+        try:
+            check_subcommand(head[4:], words[1:])
+        except Block as block:
+            block.sub = head[4:]
+            block.argv = ["git", head[4:], *words[1:]]
             raise
     elif head in SHELLS:
         for j, w in enumerate(words[1:], 1):
