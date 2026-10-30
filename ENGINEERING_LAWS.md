@@ -56,8 +56,7 @@ Before relying on how a library, API, or tool behaves, read its official docs or
 
 1. State the objective, constraints, and rationale before editing code, in the ticket or PR description. This is not input to a cold reviewer (see Cold Review).
 2. Work in bounded increments: implement, verify, reassess.
-3. Checkpoint after each major slice (one that could be merged or reverted on its own): status, gaps, and risks, as a comment on the ticket or PR.
-4. End with an outcome audit in the PR description or ticket: what was delivered, what was deferred, and the next step.
+3. End with an outcome audit in the PR description or ticket: what was delivered, what was deferred, and the next step.
 
 ---
 
@@ -123,7 +122,7 @@ Work handed to another agent (another vendor's coding agent, a subagent, a backg
 - **Delegated reviewers.** A delegate acting as a cold reviewer gets only the diff and the criteria where its tool allows (see Cold Review). A reviewer that reads the repository itself is cold on a best-effort basis, as with `/code-review`. The cost ceiling applies to delegated reviews: one reviewer per review, no fan-out.
 - **Delegated output is untrusted until verified.** It passes the same cold review and the project's CI as direct work. Do not report it as done before that.
 - **No unattended loops.** No automatic review loops between agents (for example a stop-time gate that re-invokes another agent) unless a human is watching.
-- **Record it.** The project's parameters name the model and effort used per class of task. The PR states which parts were delegated, to which agent and model, and that the output was verified.
+- **Record it.** The PR states which parts were delegated, to which agent, and that the output was verified.
 
 ---
 
