@@ -1,35 +1,30 @@
 #!/usr/bin/env python3
-"""PreToolUse guard for Bash: blocks commands that violate ENGINEERING_LAWS.md.
+"""PreToolUse guard for Bash: blocks the commands a git hook cannot see.
 
 Contract: https://code.claude.com/docs/en/hooks.md
-  stdin  JSON with cwd and tool_input.command
+  stdin  JSON with tool_input.command
   exit 2 blocks the tool call, stderr is the reason; exit 0 allows it.
 
-Design: tokenize the command into simple commands (quote-aware), then judge only
-what sits at command position. Mentions inside quotes, echo arguments, and
-comments are therefore never matched. The evaluator tracks the working directory
-(cd, pushd, subshell scope, -C, env -C), a branch moved by a chained
-switch/checkout (per directory), and worktrees created earlier in the chain, so
-`cd <repo> && git commit` and `git switch main && git commit` are judged against
-the right branch.
+Scope: three bans only. `git revert`, `--no-verify` (including `commit -n`, `am -n`,
+abbreviations), and changing `core.hooksPath`. Protection of the default branch is the
+job of the git hooks in githooks/, which see the real branch and the real remote refs.
 
-Scope: catches the spellings an agent realistically writes. It is a guard against
-mistakes, not a sandbox: variable indirection (`g=git; $g revert`), aliases,
-scripts, `ssh`/`watch`/`parallel` wrappers, and deliberate obfuscation are out of
-scope. When the working directory or branch cannot be determined, `git commit`
-and a push without a refspec are blocked (fail closed).
+Design: tokenize the command into simple commands (quote-aware), then judge only
+what sits at command position. Mentions inside quotes, echo arguments, comments and
+heredoc bodies are therefore never matched. Out of scope: variable indirection
+(`g=git; $g revert`), aliases, scripts, `ssh`/`watch`/`parallel` wrappers, and
+deliberate obfuscation. A command that mentions git and cannot be parsed is blocked
+(fail closed).
 """
 import codecs
 import json
 import os
 import re
-import subprocess
 import sys
 
 import blocklog
 import rules
 
-PROTECTED = {"main", "master"}
 SHELLS = {"bash", "sh", "zsh", "dash", "ksh", "ash", "fish"}
 # Shell keywords that precede a command: `if x; then CMD`, `{ CMD; }`, `! CMD`.
 KEYWORDS = {"if", "then", "elif", "else", "do", "while", "until", "!", "{", "}", "fi", "done", "esac", "coproc"}
@@ -41,12 +36,12 @@ WRAPPERS = {
     "exec": {"-a"},
     "builtin": set(),
     "nohup": set(),
-    "time": set(),
+    "time": {"-f", "--format", "-o", "--output"},
     "nice": {"-n", "--adjustment"},
     "ionice": {"-c", "-n", "-p", "--class", "--classdata"},
     "setsid": set(),
     "timeout": {"-s", "--signal", "-k", "--kill-after"},
-    "stdbuf": {"-i", "-o", "-e"},
+    "stdbuf": {"-i", "-o", "-e", "--input", "--output", "--error"},
     "xargs": {"-n", "-I", "-L", "-P", "-d", "-E", "-s", "-a", "--max-args", "--replace", "--max-lines",
               "--max-procs", "--delimiter", "--eof", "--max-chars", "--arg-file"},
 }
@@ -57,20 +52,12 @@ NEXT_TOKEN_LETTERS = {"commit": "mFCct", "am": ""}
 ATTACHED_LETTERS = {"commit": "Su", "am": "pCS"}
 COMMIT_VALUE_LONG = {"--message", "--file", "--reuse-message", "--reedit-message",
                      "--author", "--date", "--template", "--cleanup", "--fixup", "--squash"}
-PUSH_VALUE_OPTS = {"-o", "--push-option", "--receive-pack", "--exec", "--repo"}
 NO_VERIFY_COMMANDS = {"commit", "push", "merge", "rebase", "cherry-pick", "am", "pull"}
-# Expansions that evaluate to the current branch; resolved instead of failing closed.
-CURRENT_BRANCH_QUERIES = ("$(git branch --show-current)", "`git branch --show-current`",
-                          "$(git rev-parse --abbrev-ref HEAD)", "`git rev-parse --abbrev-ref HEAD`")
-ASSIGNMENT = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.S)
-VARIABLE = re.compile(r"\$\{(\w+)\}|\$(\w+)")
-EXPANSION = re.compile(r"\$\([^()]*\)|`[^`]*`|\$\{\w+\}|\$\w+")
-DECLARATIONS = {"export", "declare", "readonly", "local", "typeset"}
 MAX_DEPTH = 5
-MAX_VALUE_LENGTH = 4096
 
 SHELL_BEFORE_HEREDOC = re.compile(
-    r"(?:^|[;&|(`]|\$\()\s*(?:[\w./-]*/)?(?:bash|sh|zsh|dash|ksh|ash)\b[^;&|]*$")
+    r"(?:^|[;&|(`]|\$\()\s*(?:(?:[\w./-]*/)?(?:env|command|sudo|exec|nohup|time|nice|timeout|stdbuf)\s+(?:-\S+\s+)*)*"
+    r"(?:[\w./-]*/)?(?:bash|sh|zsh|dash|ksh|ash)\b[^;&|]*$")
 HEREDOC = re.compile(r"<<(-?)[ \t]*(['\"]?)([^\s'\"<>;&|()]+)\2")
 
 
@@ -87,32 +74,6 @@ class Block(Exception):
         self.rule = rule
         self.sub = None
         self.argv = None
-
-
-class State:
-    """Working directory (None = unknown); a branch set by a chained switch/checkout and the
-    directory it applies to; worktrees created in the chain; the pushd stack; saved scopes
-    for ( ... ) subshells."""
-
-    def __init__(self, directory):
-        self.directory = directory
-        self.previous = directory  # target of `cd -`
-        self.branch = None
-        self.branch_dir = None
-        self.worktrees = {}
-        self.vars = {}  # NAME=value assignments seen earlier in the command
-        self.dirstack = []
-        self.scopes = []
-
-    def copy(self):
-        clone = State(self.directory)
-        clone.previous = self.previous
-        clone.branch, clone.branch_dir = self.branch, self.branch_dir
-        clone.worktrees = dict(self.worktrees)
-        clone.vars = dict(self.vars)
-        clone.dirstack = list(self.dirstack)
-        return clone
-
 
 # ---------------------------------------------------------------- tokenizing
 
@@ -365,121 +326,6 @@ def tokenize(text):
     return items
 
 
-# ------------------------------------------------------------ paths & branch
-
-def toplevel(directory):
-    try:
-        r = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=directory,
-                           capture_output=True, text=True, timeout=5)
-    except (OSError, ValueError, UnicodeError, subprocess.SubprocessError):
-        return None
-    return r.stdout.strip() if r.returncode == 0 else None
-
-
-def same_repo(a, b):
-    if a is None or b is None:
-        return False
-    if a == b:
-        return True
-    top = toplevel(a)
-    return top is not None and top == toplevel(b)
-
-
-PWD_TOKENS = ("${PWD}", "$PWD", "$(pwd)", "`pwd`")
-TOPLEVEL_TOKENS = ("$(git rev-parse --show-toplevel)", "`git rev-parse --show-toplevel`")
-
-
-def expand_dir_tokens(text, base):
-    """Replace $PWD, $(pwd) and the repository toplevel with the directory `base`, and $HOME with the
-    home directory. With an unknown `base` they become an unresolvable marker, never a guess."""
-    for token in PWD_TOKENS:
-        text = text.replace(token, base if base is not None else "$__UNKNOWN_DIR__")
-    for token in ("${HOME}", "$HOME"):
-        text = text.replace(token, os.path.expanduser("~"))
-    for token in TOPLEVEL_TOKENS:
-        if token in text:
-            top = toplevel(base) if base is not None else None
-            if top is not None:
-                text = text.replace(token, top)
-            elif base is None:
-                text = text.replace(token, "$__UNKNOWN_DIR__")
-    return text
-
-
-def resolve_dir(target, base, variables=None):
-    """Resolve a cd/-C target against base, expanding variables assigned earlier in the same
-    command. None = unknown (an expansion that cannot be resolved)."""
-    if base is None:
-        return None
-    t = expand_dir_tokens(expand_vars(target, variables or {}), base)
-    if "$" in t or "`" in t:
-        return None
-    return os.path.normpath(os.path.join(base, os.path.expanduser(t)))
-
-
-def expand_vars(text, variables):
-    """Substitute variables assigned earlier in the same command; others stay as written."""
-    def sub(m):
-        name = m.group(1) or m.group(2)
-        return variables[name] if name in variables else m.group(0)
-    return VARIABLE.sub(sub, text)
-
-
-def existing_ancestor(directory):
-    """`directory` itself, or its nearest existing parent (a `mkdir x && cd x` target
-    does not exist yet when the guard runs, but lives in the same repository)."""
-    try:
-        directory.encode("utf-8")
-    except UnicodeError:
-        return None
-    if "\x00" in directory:
-        return None  # not a valid path at all; never fall back to a parent
-    d = directory
-    while d and not os.path.isdir(d):
-        parent = os.path.dirname(d)
-        if parent == d:
-            return None
-        d = parent
-    return d or None
-
-
-def branch_of(directory, git_args):
-    """Current branch name; '' when detached; None when it cannot be determined."""
-    directory = existing_ancestor(directory) if directory else None
-    if directory is None:
-        return None
-    try:
-        r = subprocess.run(["git", *git_args, "symbolic-ref", "--short", "-q", "HEAD"], cwd=directory,
-                           capture_output=True, text=True, timeout=5)
-    except (OSError, ValueError, UnicodeError, subprocess.SubprocessError):
-        return None
-    if r.returncode == 0:
-        return r.stdout.strip()
-    return "" if r.returncode == 1 else None
-
-
-def branch_exists(directory, git_args, name, remote=None):
-    ref = f"refs/remotes/{remote}/{name}" if remote else f"refs/heads/{name}"
-    try:
-        r = subprocess.run(["git", *git_args, "rev-parse", "--verify", "-q", ref], cwd=directory,
-                           capture_output=True, text=True, timeout=5)
-    except (OSError, ValueError, UnicodeError, subprocess.SubprocessError):
-        return False
-    return r.returncode == 0
-
-
-def effective_branch(state, directory, git_args):
-    """The branch a commit or refspec-less push would use in `directory`, accounting for
-    worktrees created and branches switched earlier in the same command."""
-    if directory is not None:
-        for path, branch in state.worktrees.items():
-            if directory == path or directory.startswith(path + os.sep):
-                return branch
-        if state.branch is not None and same_repo(directory, state.branch_dir):
-            return state.branch
-    return branch_of(directory, git_args)
-
-
 # ------------------------------------------------------------------- rules
 
 def is_no_verify(tok):
@@ -509,166 +355,23 @@ def check_no_verify(sub, rest):
                     break
 
 
-def check_push(rest, state, directory, git_args):
-    flags, positional, has_repo = [], [], False
-    i = 0
-    while i < len(rest):
-        tok = rest[i]
-        if tok == "--":
-            positional.extend(rest[i + 1:])
-            break
-        if tok in PUSH_VALUE_OPTS:
-            has_repo = has_repo or tok == "--repo"
-            i += 2
-            continue
-        if tok.startswith("--repo="):
-            has_repo = True
-        if tok.startswith("-"):
-            flags.append(tok)
-        else:
-            positional.append(tok)
-        i += 1
-    if "--mirror" in flags or "--all" in flags:
-        raise Block(rules.PUSH_ALL, "git push --all/--mirror includes protected branches.")
-    refspecs = positional if has_repo else positional[1:]
-    destinations = []
-    for ref in refspecs:
-        ref = ref.lstrip("+")
-        parts = re.split(r":(?![^{}]*\})", ref, maxsplit=1)  # a colon inside ${VAR:-x} is not a refspec colon
-        dst = parts[1] if len(parts) > 1 else ref
-        if dst.startswith("refs/tags/"):
-            continue
-        if "*" in dst:
-            raise Block(rules.PUSH_WILDCARD, "wildcard push destinations can reach protected branches.")
-        for prefix in ("refs/heads/", "heads/"):
-            if dst.startswith(prefix):
-                dst = dst[len(prefix):]
-        dst = expand_vars(dst, state.vars)
-        default = re.fullmatch(r"\$\{\w+:-([^}]*)\}", dst)
-        if default:
-            dst = default.group(1)  # assume the default applies: a protected default is suspect either way
-        for query in CURRENT_BRANCH_QUERIES:
-            if query in dst:
-                current = effective_branch(state, directory, git_args)
-                dst = dst.replace(query, current) if current is not None else dst
-        if dst in ("HEAD", "@"):
-            dst = effective_branch(state, directory, git_args)
-        elif EXPANSION.search(dst):
-            literal = EXPANSION.sub("", dst)
-            if literal:
-                dst = literal  # a literal part (feat/$(date)) means it is not exactly a protected name
-            elif re.fullmatch(r"\$\{?\w+\}?", dst):
-                continue  # a variable with no assignment in this command: environment value, out of scope
-            else:
-                dst = None  # a bare command substitution could be anything
-        destinations.append(dst)
-    if not refspecs and "--tags" not in flags:
-        destinations.append(effective_branch(state, directory, git_args))
-    for dst in destinations:
-        if dst is None:
-            raise Block(rules.PUSH_UNKNOWN_BRANCH, "cannot determine the branch being pushed (unresolved directory or expansion). "
-                        "Use a literal branch name and an absolute path.")
-        if dst in PROTECTED:
-            raise Block(rules.PUSH_PROTECTED, f"pushing to '{dst}' is banned. The default branch only changes through merged PRs.")
+# ------------------------------------------------------------------- rules
 
-
-def track_branch_switch(sub, rest, state, directory, git_args):
-    positional, new, detach, j = [], None, False, 0
-    tracking = any(t in ("-t", "--track") for t in rest)
-    if sub == "checkout" and "--" in rest:
-        return  # path checkout: the branch does not move
-    while j < len(rest):
-        tok = rest[j]
-        if tok == "--":
-            break
-        if tok in ("-b", "-B", "-c", "-C", "--create", "--force-create", "--orphan") and j + 1 < len(rest):
-            new = rest[j + 1]
-            j += 2
-            continue
-        if tok in ("--detach", "-d"):
-            detach = True
-        elif not tok.startswith("-") or tok == "-":
-            positional.append(tok)
-        j += 1
-    if new:
-        state.branch = new
-    elif detach:
-        state.branch = ""
-    elif len(positional) == 1 and positional[0] == "-":
-        state.branch = None
-        return
-    elif len(positional) == 1:
-        name = positional[0]
-        if tracking and "/" in name:
-            name = name.split("/", 1)[1]  # --track origin/main creates local main
-        if sub == "switch" or tracking:
-            state.branch = name
-        elif branch_exists(directory, git_args, name) or branch_exists(directory, git_args, name, remote="origin"):
-            state.branch = name  # an existing branch, or one DWIM creates from origin/<name>
-        else:
-            return
-    else:
-        return
-    state.branch_dir = directory
-
-
-def track_worktree(rest, state, directory, git_args):
-    """`git worktree add [-b NAME] PATH [COMMIT-ISH]`: remember the branch the new
-    directory will hold, since it does not exist yet when the guard runs."""
-    if not rest or rest[0] != "add":
-        return
-    args, positional, new, detach, j = rest[1:], [], None, False, 0
-    while j < len(args):
-        tok = args[j]
-        if tok in ("-b", "-B", "--orphan") and j + 1 < len(args):
-            new = args[j + 1]
-            j += 2
-            continue
-        if tok in ("--detach", "-d"):
-            detach = True
-        elif not tok.startswith("-"):
-            positional.append(tok)
-        j += 1
-    if not positional:
-        return
-    path = resolve_dir(positional[0], directory, state.vars)
-    if path is None:
-        return
-    if new:
-        branch = new
-    elif detach:
-        branch = ""
-    elif len(positional) > 1:
-        branch = positional[1] if branch_exists(directory, git_args, positional[1]) else ""
-    else:
-        branch = os.path.basename(path.rstrip("/"))
-    state.worktrees[path] = branch
-
-
-def check_git(args, state):
-    directory, git_args = state.directory, []
+def check_git(args):
     i = 0
     while i < len(args):
         a = args[i]
-        if a == "-C" and i + 1 < len(args):
-            directory = resolve_dir(args[i + 1], directory, state.vars)
-            i += 2
-        elif a in ("-c", "--config-env") and i + 1 < len(args):
+        if a in ("-c", "--config-env") and i + 1 < len(args):
             if "core.hookspath" in args[i + 1].lower():
                 raise Block(rules.HOOKS_PATH, "changing core.hooksPath disables hooks; that is banned like --no-verify.")
             i += 2
-        elif a in GIT_PATH_OPTS and i + 1 < len(args):
-            git_args += [a, args[i + 1]]
-            i += 2
-        elif a in GIT_VALUE_OPTS:
+        elif a == "-C" or a in GIT_PATH_OPTS or a in GIT_VALUE_OPTS:
             i += 2
         elif (a.startswith("-c") and not a.startswith("--") and len(a) > 2) or a.startswith("--config-env="):
             if "core.hookspath" in a.lower():
                 raise Block(rules.HOOKS_PATH, "changing core.hooksPath disables hooks; that is banned like --no-verify.")
             i += 1
         elif a.startswith("-"):
-            if a.split("=", 1)[0] in GIT_PATH_OPTS:
-                git_args.append(a)
             i += 1
         else:
             break
@@ -676,44 +379,57 @@ def check_git(args, state):
         return
     sub, rest = args[i], args[i + 1:]
     try:
-        check_subcommand(sub, rest, state, directory, git_args)
+        check_subcommand(sub, rest)
     except Block as block:
         block.sub = sub
         raise
 
 
-def check_subcommand(sub, rest, state, directory, git_args):
-    if sub == "revert":
+def removes_core_section(rest):
+    """Dropping or renaming the core config section takes core.hooksPath with it, and renaming another
+    section to `core` creates one. Covers `--remove-section`/`--rename-section` and the newer
+    `remove-section`/`rename-section` subcommands: any later word named core, because a `--file <path>`
+    option may sit between the action and its operands."""
+    for i, tok in enumerate(rest):
+        if tok in ("--remove-section", "--rename-section", "remove-section", "rename-section"):
+            if any(op.lower() == "core" for op in rest[i + 1:]):
+                return True
+    return False
+
+
+def opens_config_editor(rest):
+    """`git config -e`/`--edit` (or the `edit` subcommand) opens the config file, where core.hooksPath can be deleted."""
+    return any(tok in ("-e", "--edit", "edit") for tok in rest)
+
+
+def check_subcommand(sub, rest):
+    if sub == "revert" and not {"-h", "--help"} & set(rest):
         raise Block(rules.GIT_REVERT, "git revert is banned. Use git reset to undo commits.")
-    if sub == "config" and "core.hookspath" in " ".join(rest).lower():
+    if sub == "config" and ("core.hookspath" in " ".join(rest).lower() or removes_core_section(rest) or opens_config_editor(rest)):
         raise Block(rules.HOOKS_PATH, "changing core.hooksPath disables hooks; that is banned like --no-verify.")
     if sub in NO_VERIFY_COMMANDS:
         check_no_verify(sub, rest)
-    if sub == "commit" and not {"--dry-run", "-h", "--help"} & set(rest):
-        branch = effective_branch(state, directory, git_args)
-        if branch is None:
-            raise Block(rules.COMMIT_UNKNOWN_BRANCH, "cannot determine the branch for this commit (unresolved directory). "
-                        "Use an absolute path in cd/-C.")
-        if branch in PROTECTED:
-            raise Block(rules.COMMIT_PROTECTED, f"on protected branch '{branch}'. Every code change goes in a worktree on its own branch: "
-                        "git worktree add .claude/worktrees/<slug> -b <branch> origin/<default-branch>")
-    elif sub == "push" and not {"-h", "--help"} & set(rest):
-        check_push(rest, state, directory, git_args)
-    elif sub in ("switch", "checkout"):
-        track_branch_switch(sub, rest, state, directory, git_args)
-    elif sub == "worktree":
-        track_worktree(rest, state, directory, git_args)
 
 
 # --------------------------------------------------------------- evaluation
 
-def strip_prefix(words, directory, variables=None):
-    """Drop VAR=value, shell keywords, and wrapper commands. Returns (words, directory)."""
+DECLARATIONS = {"export", "declare", "typeset", "readonly", "local"}
+
+
+def check_git_config_env(word):
+    """`GIT_CONFIG_KEY_n=core.hooksPath` (or GIT_CONFIG_PARAMETERS) sets core.hooksPath for git."""
+    if word.upper().startswith("GIT_CONFIG") and "core.hookspath" in word.lower():
+        raise Block(rules.HOOKS_PATH, "setting core.hooksPath through GIT_CONFIG_* disables hooks; that is banned like --no-verify.")
+
+
+def strip_prefix(words):
+    """Drop VAR=value, shell keywords, and wrapper commands."""
     i = 0
     while i < len(words):
         w = words[i]
         name = os.path.basename(w)
         if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w) or w in KEYWORDS:
+            check_git_config_env(w)
             i += 1
         elif w == "function":
             i += 2
@@ -726,75 +442,25 @@ def strip_prefix(words, directory, variables=None):
                     break
                 opt = words[i]
                 takes_value = opt in value_opts and "=" not in opt
-                if takes_value and i + 1 < len(words) and name == "env" and opt in ("-C", "--chdir"):
-                    directory = resolve_dir(words[i + 1], directory, variables)
                 i += 2 if takes_value else 1
             if name == "timeout":
                 i += 1
         else:
             break
-    return words[i:], directory
+    return words[i:]
 
 
-def record_assignments(words, state):
-    """Remember NAME=value so a later `git push origin "$NAME"` or `cd "$NAME"` can be judged.
-    $PWD, $(pwd) and the toplevel are expanded NOW: they mean the directory at assignment time,
-    not whichever directory is current when the variable is used. An oversized value (a
-    self-doubling `A=$A$A` chain) is dropped, so the variable counts as unassigned and fails closed."""
-    for w in words:
-        m = ASSIGNMENT.match(w)
-        if not m:
-            continue
-        value = expand_dir_tokens(expand_vars(m.group(2), state.vars), state.directory)
-        if len(value) > MAX_VALUE_LENGTH:
-            state.vars.pop(m.group(1), None)
-        else:
-            state.vars[m.group(1)] = value
-
-
-def run_command(words, state, depth):
-    leading = []
-    for w in words:
-        if not ASSIGNMENT.match(w):
-            break
-        leading.append(w)
-    words, state.directory = strip_prefix(words, state.directory, state.vars)
+def run_command(words, depth):
+    words = strip_prefix(words)
     if not words:
-        record_assignments(leading, state)  # a bare `NAME=value` statement sets a shell variable
         return
     head = os.path.basename(words[0])
     if head in DECLARATIONS:
-        record_assignments(words[1:], state)
-    elif head == "unset":
-        for name in words[1:]:
-            state.vars.pop(name, None)  # a stale value must not outlive unset
-    elif head in ("for", "select") and len(words) > 2:
-        state.vars.pop(words[1], None)  # the loop variable shadows any earlier assignment
-    elif head == "read":
-        for name in words[1:]:
-            if not name.startswith("-"):
-                state.vars.pop(name, None)  # read overwrites them; forgetting too much only fails closed
-    elif head in ("cd", "pushd"):
-        args, k = words[1:], 0
-        while k < len(args) and args[k].startswith("-") and args[k] != "-":
-            k += 1
-            if args[k - 1] == "--":
-                break
-        before = state.directory
-        if head == "pushd":
-            state.dirstack.append(state.directory)
-        if k >= len(args):
-            state.directory = os.path.expanduser("~")
-        elif args[k] == "-":
-            state.directory = state.previous
-        else:
-            state.directory = resolve_dir(args[k], state.directory, state.vars)
-        state.previous = before
-    elif head == "popd":
-        state.directory = state.dirstack.pop() if state.dirstack else None
+        for w in words[1:]:
+            check_git_config_env(w)
     elif head == "git":
         try:
-            check_git(words[1:], state)
+            check_git(words[1:])
         except Block as block:
             block.argv = ["git", *words[1:]]
             raise
@@ -803,10 +469,10 @@ def run_command(words, state, depth):
             if re.fullmatch(r"-[A-Za-z]*c", w):
                 k = j + 2 if words[j + 1:j + 2] == ["--"] else j + 1
                 if k < len(words):
-                    evaluate(words[k], state.copy(), depth + 1)
+                    evaluate(words[k], depth + 1)
                 break
     elif head == "eval":
-        evaluate(" ".join(words[1:]), state, depth + 1)
+        evaluate(" ".join(words[1:]), depth + 1)
     elif head == "find":
         for j, w in enumerate(words):
             if w in ("-exec", "-execdir", "-ok", "-okdir"):
@@ -815,22 +481,17 @@ def run_command(words, state, depth):
                     if x in (";", "+"):
                         break
                     inner.append(x)
-                run_command(inner, state.copy(), depth + 1)
+                run_command(inner, depth + 1)
 
 
-def evaluate(text, state, depth=0):
+def evaluate(text, depth=0):
     if depth > MAX_DEPTH:
         raise Unparseable("nesting too deep")
     for item in tokenize(strip_heredocs(text)):
         if isinstance(item, tuple):
-            evaluate(item[1], state.copy(), depth + 1)
-        elif item == ["("]:
-            state.scopes.append((state.directory, state.branch, state.branch_dir, dict(state.vars)))
-        elif item == [")"]:
-            if state.scopes:
-                state.directory, state.branch, state.branch_dir, state.vars = state.scopes.pop()
-        else:
-            run_command(item, state, depth)
+            evaluate(item[1], depth + 1)
+        elif item not in (["("], [")"]):
+            run_command(item, depth)
 
 
 def git_prefix(command):
@@ -857,7 +518,7 @@ def main():
     if not isinstance(cwd, str) or not cwd:
         cwd = os.getcwd()
     try:
-        evaluate(command, State(cwd))
+        evaluate(command)
     except Block as reason:
         print(f"eng-laws guard: {reason}", file=sys.stderr)
         blocklog.record(reason.rule, reason.sub, cwd, reason.argv)

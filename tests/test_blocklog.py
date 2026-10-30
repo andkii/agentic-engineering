@@ -70,12 +70,6 @@ class BlockLogTest(unittest.TestCase):
             (self.feat, "git revert HEAD", "git-revert", "revert"),
             (self.feat, "git commit -n -m x", "no-verify", "commit"),
             (self.feat, "git -c core.hooksPath=/x commit -m x", "hooks-path", None),
-            (self.feat, "git push origin main", "push-protected", "push"),
-            (self.feat, "git push --all", "push-all", "push"),
-            (self.feat, "git push origin 'v*'", "push-wildcard", "push"),
-            (self.feat, "git push origin $(whoami)", "push-unknown-branch", "push"),
-            (self.main, "git commit -m x", "commit-protected", "commit"),
-            (self.feat, "git -C 'a\x00b' commit -m x", "commit-unknown-branch", "commit"),
             (self.feat, "git commit -m 'unterminated", "unparseable-git", None),
         ]
         for cwd, command, rule, sub in cases:
@@ -168,10 +162,10 @@ class BlockLogTest(unittest.TestCase):
 
     def test_secrets_inside_the_git_command_are_redacted(self):
         cases = [
-            ("git push https://tok3n123456secret@github.com/o/r main", "tok3n123456secret"),
-            ("git push https://user:hunter2pass@github.com/o/r main", "hunter2pass"),
-            ("git -c http.extraHeader='Authorization: Bearer abcDEF1234567890' push origin main", "abcDEF1234567890"),
-            ("git -c credential.token=hunter2pass push origin main", "hunter2pass"),
+            ("git push --no-verify https://tok3n123456secret@github.com/o/r main", "tok3n123456secret"),
+            ("git push --no-verify https://user:hunter2pass@github.com/o/r main", "hunter2pass"),
+            ("git -c http.extraHeader='Authorization: Bearer abcDEF1234567890' revert HEAD", "abcDEF1234567890"),
+            ("git -c credential.token=hunter2pass revert HEAD", "hunter2pass"),
             ("git commit -n -m 'rotate password hunter2pass'", "hunter2pass"),
             ("git revert HEAD ghp_abcdefghijklmnopqrstuvwxyz0123456789", "ghp_abcdef"),
             ("git revert HEAD sk_live_abcdefghijklmnop1234", "sk_live_abcdef"),

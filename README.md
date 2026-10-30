@@ -42,7 +42,8 @@ This repo is also a Claude Code plugin and a single-plugin marketplace (`.claude
 
 | Component | Path | What it does |
 |---|---|---|
-| Bash guard hook | `hooks/guard-bash.sh` (wrapper) and `hooks/guard.py`, registered in `hooks/hooks.json` | Blocks `git revert`; `--no-verify` (including `commit -n`, `am -n`, abbreviations, `-c core.hooksPath`, and `git config core.hooksPath`); any push whose destination is `main`/`master`; and `git commit` while the branch is `main`/`master` |
+| Bash guard hook | `hooks/guard-bash.sh` (wrapper) and `hooks/guard.py`, registered in `hooks/hooks.json` | Blocks `git revert` (not `git revert --help`); `--no-verify` (including `commit -n`, `am -n`, abbreviations, `-c core.hooksPath`, and `git config core.hooksPath`); and any change to `core.hooksPath`. These are the commands a git hook cannot see |
+| Git hooks | `githooks/pre-commit`, `pre-merge-commit`, `pre-applypatch`, `pre-push` | Refuse a commit on `main`/`master` made by `git commit`, by a merge that creates a commit, or by `git am`, and any push that updates or deletes `refs/heads/main` or `refs/heads/master`. Git runs them with the real branch and the real remote refs, for every agent and person. Not covered locally: `git cherry-pick` and `git rebase` (no applicable hook in githooks(5)) and fast-forward updates, which are legitimate; `pre-push` still keeps those commits off the remote. Skipped by `--no-verify`, which the guard blocks. Active only after the one-time setup below |
 | Verifier agent | `agents/verifier.md` | Read-only (`Read, Grep, Glob`) evaluator that checks acceptance criteria against the changed files with `file:line` evidence |
 | Block log and report | `hooks/blocklog.py`, `hooks/rules.py`, `hooks/report.py` | Records each block (rule id, git subcommand, time, redacted command) so false positives can be counted per rule; see "Block log" below |
 | Guard tests | `tests/test_guard.py` | Regression corpus of block and allow cases. Run `python3 -m unittest discover -s tests` |
@@ -50,17 +51,23 @@ This repo is also a Claude Code plugin and a single-plugin marketplace (`.claude
 **Guard requirements and limits.**
 - Requires `python3` (standard library only). It fails closed: a missing `python3`, an unreadable payload, or an unparseable git command blocks the call with a message instead of silently allowing it.
 - It tokenizes the command and judges only what sits at command position, so quoted text, `echo` arguments, comments and heredoc bodies never trigger it. It looks inside `if`/`for`/`while`/`case` bodies, `{ }` groups, functions, `$(...)`, backticks, `bash -c`, `eval`, `find -exec`, and wrappers such as `sudo`, `env`, `timeout`, `xargs`.
-- It tracks the working directory through `cd`, `pushd`/`popd`, `( )` subshell scope, `git -C`, `env -C`, and a fixed set of expansions: `$PWD`, `$HOME`, `$(pwd)`, `$(git rev-parse --show-toplevel)`, quoted or not. A command substitution never splits the command it sits in.
-- It tracks a branch moved by a `git switch`/`checkout` earlier in the same command, for the directory where the switch ran (path checkouts, `--detach` and `checkout -` are handled), and a worktree created by `git worktree add` earlier in the same command. `git push origin "$(git branch --show-current)"` resolves to the current branch.
-- It follows simple shell variables assigned at the top level of the same command (`BRANCH=feat/x; git push origin "$BRANCH"`, also `export`/`declare`/`readonly`/`local`) in push destinations and in `cd`, `pushd`, `git -C`, `env -C` and `git worktree add` targets, a `${VAR:-main}` default in a push destination (in a `cd` or `-C` target a `${VAR:-x}` fails closed), `cd -`, and a `mkdir x && cd x` target under an existing repository. `$PWD`, `$(pwd)` and the toplevel inside a value mean the directory at the moment of assignment, not the directory current when the variable is used. `unset NAME`, a `for NAME in` loop, `select NAME in` and `read NAME` forget an earlier assignment (the variable then counts as unassigned). A `for` loop over a literal path is therefore blocked for `git commit` (fails closed), and a push to a loop variable is allowed because an unassigned variable is out of scope. A value longer than 4,096 characters is dropped, so a self-doubling chain such as `A=$A$A` cannot exhaust memory; the variable then fails closed.
-- Not followed: an assignment inside an `if`/`for`/`{ }`/function body, which means the guard silently keeps using the earlier top-level value (or none), `+=`, an empty value (`D=` is not treated as `cd` to home), the `env --chdir=` spelling, a literal loop list (`for b in main master`), a value holding `refs/heads/...` or `HEAD:...`, and `$(...)` values other than the current-branch queries. A checkout that creates a local branch from `origin/<name>` (DWIM or `--track`) counts as a switch.
-- When the directory or branch cannot be determined, `git commit` and a push without a refspec are blocked with a message asking for a literal branch name and an absolute path. Known friction: a bare command substitution as a push destination (`git push origin $(some-command)`), any `$VAR` with no assignment in the same command, or any other `$(...)`, in a `cd`/`-C` target, and `git init x && cd x && git commit` outside a repository (the new repository does not exist yet when the guard runs). Inside a repository, `git init x`/`git clone … x` followed by `cd x && git commit` is judged against the parent repository's branch, not the new one. A variable with no assignment in the same command (loop variable, value from the environment) is not judged: it is variable indirection, out of scope below.
-- It is a guard against mistakes, not a sandbox. Out of scope: other variable indirection (`g=git; $g revert`), aliases, scripts, `ssh`/`watch`/`parallel`/`env -S` wrappers, `GIT_*` environment overrides, and deliberate obfuscation. Edits made through tools other than Bash are not covered.
+- It does not track the working directory, the branch, or shell variables. Protecting the default branch is the job of the git hooks, which see the real state.
+- It is a guard against mistakes, not a sandbox. Out of scope: building a `core` section indirectly (for example through `include.path`), variable indirection (`g=git; $g revert`), aliases, scripts, `ssh`/`watch`/`parallel`/`env -S` wrappers, other `GIT_*` environment overrides (a `GIT_CONFIG_*` assignment that sets `core.hooksPath` is blocked), and deliberate obfuscation. Edits made through tools other than Bash are not covered.
 - It blocks `--no-verify` unconditionally, which is stricter than the law's "unless the user explicitly requests it". If the user requests it, the user runs the command themselves (the `!` prefix) or disables the plugin for that session.
 
 A plugin-root `CLAUDE.md` is not loaded as context, so the laws still reach a project through the `@import` above; the plugin adds enforcement only.
 
 Install: `claude plugin marketplace add andkii/eng-laws#<tag>` then `claude plugin install eng-laws@eng-laws`.
+
+### Git hooks setup
+
+Git runs hooks only when `core.hooksPath` points at them, and that setting is per clone (every worktree of a clone shares it). The guard blocks any Bash command that mentions `core.hooksPath`, so a person runs this once in each clone:
+
+```sh
+git config core.hooksPath ~/.claude/eng-laws/githooks
+```
+
+Use the absolute path of the pinned checkout (the shell expands `~` when you run it); a relative path would resolve inside each project and find nothing. Updating the pinned checkout updates the hooks. `--no-verify` skips both hooks, and changing `core.hooksPath` turns them off, which is why the guard keeps those two bans. Without this setup nothing protects the default branch except the laws and server-side branch protection, where the host offers it.
 
 ### Block log
 

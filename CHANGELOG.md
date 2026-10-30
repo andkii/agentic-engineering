@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0
+
+- Guard narrowed to three bans: `git revert` (now allowed with `--help`/`-h`), `--no-verify`, and `core.hooksPath` changes. It no longer tracks the directory, branch or shell variables, and no longer judges pushes or commits to `main`/`master`. Rules `push-protected`, `push-all`, `push-wildcard`, `push-unknown-branch`, `commit-protected`, `commit-unknown-branch` are removed from `hooks/rules.py` (old log entries with those ids still report). The guard also blocks removing or renaming the `core` config section (both `--remove-section` and the newer `remove-section` forms) and `GIT_CONFIG_*` assignments that set `core.hooksPath`, and sees through `time -f/-o` options. New `githooks/pre-commit`, `pre-merge-commit`, `pre-applypatch` and `pre-push` refuse commits on (by commit, merge commit or `git am`) and pushes to `main`/`master`; cherry-pick and rebase have no applicable hook; each clone runs `git config core.hooksPath <absolute path to githooks>` once (see the README). Repositories that adopt this version without the setup lose default-branch protection. Plugin version 0.2.0 because guard behavior changed and adopters must run the hooks setup.
+
 ## 0.1.3
 
 - Guard: expand variables assigned earlier in the same command when resolving `cd`, `git -C`, `env -C` and `git worktree add` targets. `D=/path; cd "$D" && git commit` was blocked as an unresolved directory even when `$D` was a feature checkout; a variable pointing at a protected checkout is now blocked as such. A variable with no assignment in the command still fails closed. `$PWD`, `$(pwd)` and the toplevel inside an assigned value are expanded at assignment time (previously they would have been resolved against whatever directory was current at use). `unset`, a `for` loop variable, `select` and `read` forget an earlier assignment. A value over 4,096 characters is dropped, which also stops a self-doubling `A=$A$A` chain from hanging or exhausting memory in the hook.
