@@ -16,7 +16,7 @@ Three modes — pick the right one:
 
 **Planned work** (features, multi-session initiatives, architecture changes): A Plane ticket must exist with problem, rationale, acceptance criteria, and a link to `docs/designs/FEATURE-NAME.md` for anything touching architecture or data schema. The ticket description is the agent brief — if incomplete, ask, and put the answer in the ticket.
 
-**Docs-only work** (planned changes only under `docs/` or in top-level `*.md` files): No ticket required. Before review, confirm it with `git diff --name-only <default-branch>` plus `git ls-files --others --exclude-standard`, which together list committed, staged, unstaged and untracked paths. If any other path appears, it is planned or reactive work and the rules above apply. It still gets a worktree, a branch, a PR and the one cold review.
+**Docs-only work** (planned changes only under `docs/` or in top-level `*.md` files): No ticket required. Before review, confirm it with `git diff --name-only origin/<default-branch>` after `git fetch origin`, plus `git ls-files --others --exclude-standard`, which together list committed, staged, unstaged and untracked paths. If any other path appears, it is planned or reactive work and the rules above apply. It still gets a worktree, a branch, a PR and the one cold review.
 
 **Reactive work** (prod bugs, user-reported issues, quick fixes): No Plane ticket required. Log the outcome in `docs/feedback/YYYY-MM-DD-slug.md` when done.
 
@@ -123,7 +123,7 @@ Work handed to another agent (another vendor's coding agent, a subagent, a backg
 - **Isolate writes.** Write delegation runs in a worktree on its own branch, started from a session whose working directory is that worktree, because delegates work in the git root of the delegating session's directory. A session in the default-branch checkout cannot delegate writes.
 - **Brief it checkably.** The delegate gets the objective, constraints, checkable acceptance criteria, and the absolute worktree path.
 - **Delegated reviewers.** A delegate acting as a cold reviewer gets only the diff and the criteria where its tool allows (see Cold Review). A reviewer that reads the repository itself is cold on a best-effort basis, as with `/code-review`. The cost ceiling applies to delegated reviews: one reviewer per review, no fan-out.
-- **Delegated output is untrusted until verified.** It passes the same cold review and the project's CI as direct work. Do not report it as done before that. A delegated reviewer's report is not reviewed again: the author checks each finding against the diff.
+- **Delegated implementation output is untrusted until verified.** It passes the same cold review and the project's CI as direct work. Do not report it as done before that. A delegated reviewer's report is not implementation output and gets no second cold review: the author checks each finding against the diff.
 - **No unattended loops.** No automatic review loops between agents (for example a stop-time gate that re-invokes another agent) unless a human is watching.
 - **Record it.** The project's parameters name the model and effort used per class of task. The PR states which parts were delegated, to which agent and model, and that the output was verified.
 
@@ -185,9 +185,9 @@ Ticket states and the `docs/` paths are conventions; map them onto your own trac
 - **Docs-only work**: no ticket; see Work Creation.
 - **Reactive work**: no ticket required — log outcome in `docs/feedback/YYYY-MM-DD-slug.md`.
 - Session start: for ticketed work, read the ticket description and any linked design docs before touching code.
-- Move to **In Progress** when starting ticketed work. Run the cold review (including the hotfix exception stated there) and post its output before moving to **Blocked/In Review** (docs-only work has no ticket states: the review output goes on the PR and the PR is ready for the owner when the review has no open finding).
+- Move to **In Progress** when starting ticketed work. Run the cold review (including the hotfix exception stated there) and post its output before moving to **Blocked/In Review**. Unticketed work (reactive or docs-only) has no ticket states: it gets the same cold review with the output posted as a PR comment, and the PR is ready for the owner when the review has no open `FAIL`, `FINDING` or `UNVERIFIABLE` result.
 - Never move to **Done** — reserved for user approval.
-- Commit format: `<type>(<scope>): <description> [PLANE-###]`. Docs-only work has no ticket: leave out the ticket id, and post the review output as a PR comment instead of a ticket comment.
+- Commit format: `<type>(<scope>): <description> [PLANE-###]`. Unticketed work (reactive or docs-only) has no ticket id: use `<type>(<scope>): <description>`.
 
 ---
 
