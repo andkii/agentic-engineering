@@ -41,7 +41,7 @@ WRAPPERS = {
     "ionice": {"-c", "-n", "-p", "--class", "--classdata"},
     "setsid": set(),
     "timeout": {"-s", "--signal", "-k", "--kill-after"},
-    "stdbuf": {"-i", "-o", "-e"},
+    "stdbuf": {"-i", "-o", "-e", "--input", "--output", "--error"},
     "xargs": {"-n", "-I", "-L", "-P", "-d", "-E", "-s", "-a", "--max-args", "--replace", "--max-lines",
               "--max-procs", "--delimiter", "--eof", "--max-chars", "--arg-file"},
 }
@@ -56,7 +56,8 @@ NO_VERIFY_COMMANDS = {"commit", "push", "merge", "rebase", "cherry-pick", "am", 
 MAX_DEPTH = 5
 
 SHELL_BEFORE_HEREDOC = re.compile(
-    r"(?:^|[;&|(`]|\$\()\s*(?:[\w./-]*/)?(?:bash|sh|zsh|dash|ksh|ash)\b[^;&|]*$")
+    r"(?:^|[;&|(`]|\$\()\s*(?:(?:[\w./-]*/)?(?:env|command|sudo|exec|nohup|time|nice|timeout|stdbuf)\s+(?:-\S+\s+)*)*"
+    r"(?:[\w./-]*/)?(?:bash|sh|zsh|dash|ksh|ash)\b[^;&|]*$")
 HEREDOC = re.compile(r"<<(-?)[ \t]*(['\"]?)([^\s'\"<>;&|()]+)\2")
 
 
@@ -396,10 +397,15 @@ def removes_core_section(rest):
     return False
 
 
+def opens_config_editor(rest):
+    """`git config -e`/`--edit` (or the `edit` subcommand) opens the config file, where core.hooksPath can be deleted."""
+    return any(tok in ("-e", "--edit", "edit") for tok in rest)
+
+
 def check_subcommand(sub, rest):
     if sub == "revert" and not {"-h", "--help"} & set(rest):
         raise Block(rules.GIT_REVERT, "git revert is banned. Use git reset to undo commits.")
-    if sub == "config" and ("core.hookspath" in " ".join(rest).lower() or removes_core_section(rest)):
+    if sub == "config" and ("core.hookspath" in " ".join(rest).lower() or removes_core_section(rest) or opens_config_editor(rest)):
         raise Block(rules.HOOKS_PATH, "changing core.hooksPath disables hooks; that is banned like --no-verify.")
     if sub in NO_VERIFY_COMMANDS:
         check_no_verify(sub, rest)
