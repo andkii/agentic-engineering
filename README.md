@@ -67,7 +67,7 @@ Git runs hooks only when `core.hooksPath` points at them, and that setting is pe
 git config core.hooksPath ~/.claude/eng-laws/githooks
 ```
 
-Use the absolute path of the pinned checkout (the shell expands `~` when you run it); a relative path would resolve inside each project and find nothing. Updating the pinned checkout updates the hooks. `--no-verify` skips both hooks, and changing `core.hooksPath` turns them off, which is why the guard keeps those two bans. Without this setup nothing protects the default branch except the laws and server-side branch protection, where the host offers it.
+Use the absolute path of the pinned checkout (the shell expands `~` when you run it); a relative path would resolve inside each project and find nothing. Updating the pinned checkout updates the hooks. `--no-verify` skips both hooks, and changing `core.hooksPath` turns them off, which is why the guard keeps those two bans. Git accepts a `core.hooksPath` that does not exist and then runs no hooks, so check that `ls ~/.claude/eng-laws/githooks` lists the four hooks (for a plugin-only install without that checkout, point at the plugin's `githooks/` directory instead), and check `git config --get core.hooksPath` first: the command replaces any hooks path the project already set. The hooks cover `git commit`, merge, `git am` and `git push`; plumbing such as `git send-pack` does not run `pre-push`, so server-side branch protection is the authoritative control. Without this setup nothing protects the default branch except the laws and server-side branch protection, where the host offers it.
 
 ### Block log
 

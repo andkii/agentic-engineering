@@ -57,7 +57,7 @@ MAX_DEPTH = 5
 
 SHELL_BEFORE_HEREDOC = re.compile(
     r"(?:^|[;&|(`]|\$\()\s*(?:(?:if|then|elif|else|do|while|until|!|\{)\s+)*(?:(?:[\w./-]*/)?(?:" + "|".join(sorted(WRAPPERS)) + r")\s+(?:[^\s;&|()]+\s+)*?)*"
-    r"(?:[\w./-]*/)?(?:bash|sh|zsh|dash|ksh|ash)\b[^;&|]*$")
+    r"(?:[\w./-]*/)?(?:bash|sh|zsh|dash|ksh|ash|fish)\b[^;&|]*$")
 HEREDOC = re.compile(r"<<(-?)[ \t]*(['\"]?)([^\s'\"<>;&|()]+)\2")
 
 

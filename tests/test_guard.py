@@ -138,6 +138,8 @@ BLOCK = [
     ("feat", "{ bash <<EOF\ngit revert HEAD\nEOF\n}"),
     ("feat", "if true; then bash <<EOF\ngit commit --no-verify -m x\nEOF\nfi"),
     ("feat", "{fd}>/dev/null git revert HEAD"),
+    ("feat", "fish <<EOF\ngit revert HEAD\nEOF"),
+    ("feat", "timeout 5 fish <<EOF\ngit commit --no-verify -m x\nEOF"),
     ("feat", "{fd}>/dev/null git commit --no-verify -m x"),
     ("feat", "{fd}>/dev/null git config core.hooksPath x"),
     ("feat", "sh -ce 'git revert HEAD'"),
