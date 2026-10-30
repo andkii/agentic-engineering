@@ -56,7 +56,7 @@ NO_VERIFY_COMMANDS = {"commit", "push", "merge", "rebase", "cherry-pick", "am", 
 MAX_DEPTH = 5
 
 SHELL_BEFORE_HEREDOC = re.compile(
-    r"(?:^|[;&|(`]|\$\()\s*(?:(?:[\w./-]*/)?(?:env|command|sudo|exec|nohup|time|nice|timeout|stdbuf)\s+(?:[^\s;&|()]+\s+)*?)*"
+    r"(?:^|[;&|(`]|\$\()\s*(?:(?:[\w./-]*/)?(?:" + "|".join(sorted(WRAPPERS)) + r")\s+(?:[^\s;&|()]+\s+)*?)*"
     r"(?:[\w./-]*/)?(?:bash|sh|zsh|dash|ksh|ash)\b[^;&|]*$")
 HEREDOC = re.compile(r"<<(-?)[ \t]*(['\"]?)([^\s'\"<>;&|()]+)\2")
 
@@ -385,13 +385,20 @@ def check_git(args):
         raise
 
 
+def is_option(tok, full):
+    """Git accepts any prefix of a long option, so `--remove-sec` is `--remove-section`. Match every prefix
+    of three or more characters (`--r`), which also catches a `=value` suffix. Over-matching only blocks more."""
+    name = tok.split("=", 1)[0]
+    return len(name) >= 3 and full.startswith(name)
+
+
 def removes_core_section(rest):
     """Dropping or renaming the core config section takes core.hooksPath with it, and renaming another
     section to `core` creates one. Covers `--remove-section`/`--rename-section` and the newer
     `remove-section`/`rename-section` subcommands: any later word named core, because a `--file <path>`
     option may sit between the action and its operands."""
     for i, tok in enumerate(rest):
-        if tok in ("--remove-section", "--rename-section", "remove-section", "rename-section"):
+        if tok in ("remove-section", "rename-section") or is_option(tok, "--remove-section") or is_option(tok, "--rename-section"):
             if any(op.lower() == "core" for op in rest[i + 1:]):
                 return True
     return False
@@ -399,7 +406,7 @@ def removes_core_section(rest):
 
 def opens_config_editor(rest):
     """`git config -e`/`--edit` (or the `edit` subcommand) opens the config file, where core.hooksPath can be deleted."""
-    return any(tok in ("-e", "--edit", "edit") for tok in rest)
+    return any(tok in ("-e", "edit") or is_option(tok, "--edit") for tok in rest)
 
 
 def check_subcommand(sub, rest):
@@ -466,7 +473,7 @@ def run_command(words, depth):
             raise
     elif head in SHELLS:
         for j, w in enumerate(words[1:], 1):
-            if re.fullmatch(r"-[A-Za-z]*c", w):
+            if re.fullmatch(r"-[A-Za-z]*c[A-Za-z]*", w):
                 k = j + 2 if words[j + 1:j + 2] == ["--"] else j + 1
                 if k < len(words):
                     evaluate(words[k], depth + 1)
