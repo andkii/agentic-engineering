@@ -1,6 +1,12 @@
 #!/bin/sh
 # Refuse commits on master or main.
 branch=$(git symbolic-ref --short -q HEAD)
+status=$?
+# Exit 1 means a detached HEAD. Any other failure (git missing, broken repo) refuses the commit.
+if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
+  echo "pre-commit: cannot read the current branch (git exit $status); refusing the commit." >&2
+  exit 1
+fi
 case "$branch" in
   master|main)
     echo "pre-commit: refusing to commit on '$branch'. Use a worktree branch and open a PR." >&2

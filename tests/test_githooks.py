@@ -76,6 +76,13 @@ class GitHooksTest(unittest.TestCase):
             git(self.work, "checkout", "-q", "feature")
             git(self.work, "branch", "-q", "-D", "patchsrc")
 
+    def test_commit_is_refused_when_git_cannot_run(self):
+        hook = os.path.join(HOOKS, "pre-commit")
+        r = subprocess.run(["/bin/sh", hook], cwd=self.work, env={"PATH": "/nonexistent"},
+                           capture_output=True, text=True)
+        self.assertEqual(r.returncode, 1, r.stderr)
+        self.assertIn("cannot read the current branch", r.stderr)
+
     def test_commit_on_feature_is_allowed(self):
         r = git(self.work, *IDENT, "commit", "--allow-empty", "-m", "x", check=False)
         self.assertEqual(r.returncode, 0, r.stderr)

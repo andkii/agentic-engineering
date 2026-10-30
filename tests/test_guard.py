@@ -128,6 +128,10 @@ BLOCK = [
     ("feat", "ionice -c 3 git revert HEAD"),
     ("feat", "stdbuf -oL git revert HEAD"),
     ("feat", "echo HEAD | xargs git revert"),
+    ("feat", "echo HEAD | xargs --process-slot-var SLOT git revert"),
+    ("feat", "timeout 5 bash <<EOF\ngit commit --no-verify -m x\nEOF"),
+    ("feat", "env -u FOO bash <<EOF\ngit revert HEAD\nEOF"),
+    ("feat", "sudo -u root bash <<EOF\ngit revert HEAD\nEOF"),
     ("feat", "find . -exec git revert {} \\;"),
     ("feat", "bash -c -- 'git revert HEAD'"),
     # redirects glued to words

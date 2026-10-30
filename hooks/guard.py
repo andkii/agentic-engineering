@@ -43,7 +43,7 @@ WRAPPERS = {
     "timeout": {"-s", "--signal", "-k", "--kill-after"},
     "stdbuf": {"-i", "-o", "-e", "--input", "--output", "--error"},
     "xargs": {"-n", "-I", "-L", "-P", "-d", "-E", "-s", "-a", "--max-args", "--replace", "--max-lines",
-              "--max-procs", "--delimiter", "--eof", "--max-chars", "--arg-file"},
+              "--max-procs", "--delimiter", "--eof", "--max-chars", "--arg-file", "--process-slot-var"},
 }
 GIT_VALUE_OPTS = {"--namespace", "--super-prefix", "--exec-path"}
 GIT_PATH_OPTS = {"--git-dir", "--work-tree"}
@@ -56,7 +56,7 @@ NO_VERIFY_COMMANDS = {"commit", "push", "merge", "rebase", "cherry-pick", "am", 
 MAX_DEPTH = 5
 
 SHELL_BEFORE_HEREDOC = re.compile(
-    r"(?:^|[;&|(`]|\$\()\s*(?:(?:[\w./-]*/)?(?:env|command|sudo|exec|nohup|time|nice|timeout|stdbuf)\s+(?:-\S+\s+)*)*"
+    r"(?:^|[;&|(`]|\$\()\s*(?:(?:[\w./-]*/)?(?:env|command|sudo|exec|nohup|time|nice|timeout|stdbuf)\s+(?:[^\s;&|()]+\s+)*?)*"
     r"(?:[\w./-]*/)?(?:bash|sh|zsh|dash|ksh|ash)\b[^;&|]*$")
 HEREDOC = re.compile(r"<<(-?)[ \t]*(['\"]?)([^\s'\"<>;&|()]+)\2")
 
