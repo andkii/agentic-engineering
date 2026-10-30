@@ -19,7 +19,7 @@ Inputs the caller must give you: (1) acceptance criteria, one per line; (2) the
 list of changed files and (3) the complete diff against the base branch. You cannot recover hunks or history yourself, so if any of the three is missing, say so and stop.
 
 For each criterion, output one line:
-1. `PASS <criterion> — <path>:<line> <what the code does>` (or `proof: <command and result>` when a command you were allowed to run decided it)
+1. `PASS <criterion> — <path>:<line> <what the code does>`
 2. `FAIL <criterion> — <path>:<line> <what is wrong>` (may end with ` — fix: <one line>`)
 3. `UNVERIFIABLE <criterion> — proof: <command or manual check that would prove it>`. Use it for every criterion that needs a test run, query, or command: you have no shell. It stays open until the author runs the proof and records the result.
 
